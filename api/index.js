@@ -64,8 +64,22 @@ module.exports = async function handler(req, res) {
   }
 
   let body = req.body;
-  if (typeof body === "string") {
-    try { body = JSON.parse(body); } catch (e) {}
+  if (!body || typeof body !== "object" || Object.keys(body).length === 0) {
+    if (typeof body === "string") {
+      try { body = JSON.parse(body); } catch (e) {}
+    } else {
+      try {
+        const rawBody = await new Promise((resolve) => {
+          let chunks = "";
+          req.on("data", (chunk) => (chunks += chunk));
+          req.on("end", () => resolve(chunks));
+          req.on("error", () => resolve(""));
+        });
+        if (rawBody) {
+          body = JSON.parse(rawBody);
+        }
+      } catch (e) {}
+    }
   }
   if (!body) body = {};
 
