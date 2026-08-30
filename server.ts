@@ -564,7 +564,7 @@ class ApiResilienceGateway {
 
 const apiGateway = new ApiResilienceGateway();
 
-async function startServer() {
+export async function createExpressServer(isServerless = false) {
   const app = express();
   
   // Enable full CORS and Private Network Access for all origins, including file://, localhost, and local network
@@ -1479,23 +1479,29 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
     res.status(400).json({ error: "Invalid memories array" });
   });
 
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+  if (!isServerless) {
+    if (process.env.NODE_ENV !== "production") {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on port ${PORT}`);
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+  return app;
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  createExpressServer(false);
+}
