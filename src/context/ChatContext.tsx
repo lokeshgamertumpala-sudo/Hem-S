@@ -67,6 +67,16 @@ interface ChatContextType {
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
+export function sanitizeTitle(text: string): string {
+  if (!text) return "New Session";
+  let clean = text
+    .replace(/[*#`_~>\[\]\(\)\{\}\\\n\r]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean || clean.length === 0) return "New Session";
+  return clean.length > 32 ? clean.slice(0, 32) + "..." : clean;
+}
+
 const generateUniqueId = (prefix = "chat") =>
   `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}_${Math.floor(Math.random() * 1000000)}`;
 
@@ -89,6 +99,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             sanitized.push({
               ...item,
               id,
+              title: sanitizeTitle(item.title || item.prompt || "New Session"),
               messages: Array.isArray(item.messages) ? item.messages : []
             });
           }
@@ -195,7 +206,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
         return [{
           id: targetId,
-          title: prompt.substring(0, 30) + (prompt.length > 30 ? '...' : ''),
+          title: sanitizeTitle(prompt),
           timestamp: Date.now(),
           prompt,
           responses,
@@ -237,7 +248,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const filtered = prev.filter(c => c.id !== targetId);
         return [{
           id: targetId,
-          title: msg.content.substring(0, 30),
+          title: sanitizeTitle(msg.content),
           timestamp: Date.now(),
           prompt: msg.content,
           responses: [],

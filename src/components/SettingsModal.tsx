@@ -247,9 +247,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         <button
                           onClick={() => removeMemory(index)}
                           title="Delete memory"
-                          className="text-[#A89F91] hover:text-red-400 p-1 rounded-lg hover:bg-red-500/10 transition-colors opacity-60 group-hover:opacity-100"
+                          className="text-[#A89F91] hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 active:bg-red-500/20 transition-all opacity-80 sm:opacity-60 sm:group-hover:opacity-100 active:scale-95 shrink-0"
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     ))

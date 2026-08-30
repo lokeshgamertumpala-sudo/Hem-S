@@ -99,10 +99,10 @@ export function Sidebar({ isOpen, onClose, onOpenSettings, onOpenSkills }: Sideb
                     </div>
                     <button 
                       onClick={(e) => handleDeleteChat(e, chat.id)} 
-                      className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-red-400 p-1.5 rounded hover:bg-red-500/10 transition-all flex-shrink-0"
+                      className="opacity-60 sm:opacity-0 sm:group-hover:opacity-100 text-[var(--text-muted)] hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 active:bg-red-500/20 active:scale-95 transition-all flex-shrink-0"
                       title="Delete this chat"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 ))}
