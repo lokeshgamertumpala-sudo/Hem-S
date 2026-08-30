@@ -1,7 +1,3 @@
-export const config = {
-  runtime: "edge",
-};
-
 const SWARM_ROLES = [
   {
     roleName: "Agent 1",
@@ -53,37 +49,28 @@ function detectRepetition(text) {
   return false;
 }
 
-export default async function handler(request: Request) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS, HEAD",
-        "Access-Control-Allow-Headers": "*"
-      }
-    });
+export default async function handler(req: any, res: any) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD");
+  res.setHeader("Access-Control-Allow-Headers", "*");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
   }
 
-  if (request.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-    });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  let body: any = {};
-  try {
-    body = await request.json();
-  } catch (e) {}
+  let body: any = req.body;
+  if (!body || typeof body !== "object") {
+    try { body = typeof body === "string" ? JSON.parse(body) : {}; } catch (e) { body = {}; }
+  }
 
   const { prompt, apiKeys = [], models = [], history = [], clientTimestamp, clientTimezone, clientLocaleString } = body;
 
   if (!prompt || !Array.isArray(models) || models.length === 0) {
-    return new Response(JSON.stringify({ error: "Missing prompt or models array" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-    });
+    return res.status(400).json({ error: "Missing prompt or models array" });
   }
 
   const now = clientTimestamp ? new Date(clientTimestamp) : new Date();
@@ -93,151 +80,134 @@ export default async function handler(request: Request) {
 
   const temporalDirective = "\n\n[LIVE REAL-TIME CLOCK & TEMPORAL CONTEXT]\n• User Local Time: " + localStr + " (" + tz + ")\n• Indian Standard Time (IST): " + istStr + "\n• UTC Time: " + now.toUTCString() + "\n• Current Year: " + now.getUTCFullYear() + "\nMANDATE: Whenever asked about time/date/day, strictly use the live clock above.";
 
-  const envNvidia = typeof process !== "undefined" && process.env ? process.env.NVIDIA_API_KEY : undefined;
-  const envOpenRouter = typeof process !== "undefined" && process.env ? process.env.OPENROUTER_API_KEY : undefined;
-  const envGroq = typeof process !== "undefined" && process.env ? process.env.GROQ_API_KEY : undefined;
-  const envDeepSeek = typeof process !== "undefined" && process.env ? process.env.DEEPSEEK_API_KEY : undefined;
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
 
   const collectedKeys: string[] = [
     ...apiKeys.filter((k: any) => typeof k === "string" && k.trim().length > 10),
-    envNvidia,
-    envOpenRouter,
-    envGroq,
-    envDeepSeek
+    process.env.NVIDIA_API_KEY,
+    process.env.OPENROUTER_API_KEY,
+    process.env.GROQ_API_KEY,
+    process.env.DEEPSEEK_API_KEY
   ].filter(Boolean) as string[];
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      if (collectedKeys.length === 0) {
-        controller.enqueue(encoder.encode("data: " + JSON.stringify({ modelIndex: 0, modelId: models[0]?.id || "error", content: "⚠️ **API Key Required**\n\nPlease add your NVIDIA NIM (nvapi-...), OpenRouter, or Groq API key in **Settings ⚙️** (Sidebar -> API Keys) to run the 5-AI Swarm." }) + "\n\n"));
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-        controller.close();
-        return;
-      }
+  if (collectedKeys.length === 0) {
+    res.write("data: " + JSON.stringify({ modelIndex: 0, modelId: models[0]?.id || "error", content: "⚠️ **API Key Required**\n\nPlease add your NVIDIA NIM (nvapi-...), OpenRouter, or Groq API key in **Settings ⚙️** (Sidebar -> API Keys) to run the 5-AI Swarm." }) + "\n\n");
+    res.write("data: [DONE]\n\n");
+    return res.end();
+  }
 
-      const modelPromises = models.map(async (model, modelIdx) => {
-        const roleIdx = model.swarmRoleIndex !== undefined ? model.swarmRoleIndex : modelIdx;
-        const swarmRole = SWARM_ROLES[roleIdx % SWARM_ROLES.length];
-        const keyToUse = collectedKeys[modelIdx % collectedKeys.length] || collectedKeys[0];
+  const modelPromises = models.map(async (model: any, modelIdx: number) => {
+    const roleIdx = model.swarmRoleIndex !== undefined ? model.swarmRoleIndex : modelIdx;
+    const swarmRole = SWARM_ROLES[roleIdx % SWARM_ROLES.length];
+    const keyToUse = collectedKeys[modelIdx % collectedKeys.length] || collectedKeys[0];
 
-        const isNvidia = keyToUse.startsWith("nvapi-");
-        const isGroq = keyToUse.startsWith("gsk_");
-        const isDeepSeek = keyToUse.startsWith("sk-") && !keyToUse.startsWith("sk-or-") && keyToUse.length === 35;
+    const isNvidia = keyToUse.startsWith("nvapi-");
+    const isGroq = keyToUse.startsWith("gsk_");
+    const isDeepSeek = keyToUse.startsWith("sk-") && !keyToUse.startsWith("sk-or-") && keyToUse.length === 35;
 
-        let endpoint = "https://openrouter.ai/api/v1/chat/completions";
-        let headers = {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + keyToUse
-        };
+    let endpoint = "https://openrouter.ai/api/v1/chat/completions";
+    let headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + keyToUse
+    };
 
-        let candidateModels = [];
+    let candidateModels: string[] = [];
 
-        if (isNvidia) {
-          endpoint = "https://integrate.api.nvidia.com/v1/chat/completions";
-          candidateModels = [model.id, ...swarmRole.nvidiaCandidates];
-        } else if (isGroq) {
-          endpoint = "https://api.groq.com/openai/v1/chat/completions";
-          candidateModels = swarmRole.groqCandidates;
-        } else if (isDeepSeek) {
-          endpoint = "https://api.deepseek.com/chat/completions";
-          candidateModels = ["deepseek-chat", "deepseek-reasoner"];
-        } else {
-          endpoint = "https://openrouter.ai/api/v1/chat/completions";
-          headers["HTTP-Referer"] = "https://hems-ai.vercel.app";
-          headers["X-Title"] = "OmniModel Swarm";
-          candidateModels = [model.id, ...swarmRole.openRouterCandidates];
-        }
+    if (isNvidia) {
+      endpoint = "https://integrate.api.nvidia.com/v1/chat/completions";
+      candidateModels = [model.id, ...swarmRole.nvidiaCandidates];
+    } else if (isGroq) {
+      endpoint = "https://api.groq.com/openai/v1/chat/completions";
+      candidateModels = swarmRole.groqCandidates;
+    } else if (isDeepSeek) {
+      endpoint = "https://api.deepseek.com/chat/completions";
+      candidateModels = ["deepseek-chat", "deepseek-reasoner"];
+    } else {
+      endpoint = "https://openrouter.ai/api/v1/chat/completions";
+      headers["HTTP-Referer"] = "https://hems-ai.vercel.app";
+      headers["X-Title"] = "OmniModel Swarm";
+      candidateModels = [model.id, ...swarmRole.openRouterCandidates];
+    }
 
-        const systemPrompt = swarmRole.systemInstruction(prompt, model.name) + temporalDirective;
-        const messages = [{ role: "system", content: systemPrompt }];
+    const systemPrompt = swarmRole.systemInstruction(prompt, model.name) + temporalDirective;
+    const messages: any[] = [{ role: "system", content: systemPrompt }];
 
-        if (Array.isArray(history) && history.length > 0) {
-          history.forEach(h => {
-            if (h.role === "user") messages.push({ role: "user", content: String(h.content) });
-            else if (h.role === "assistant" && (h.modelIndex === undefined || h.modelIndex === modelIdx)) {
-              messages.push({ role: "assistant", content: String(h.content) });
-            }
-          });
-        } else {
-          messages.push({ role: "user", content: prompt });
-        }
-
-        let success = false;
-        for (const candidate of candidateModels) {
-          if (success) break;
-          try {
-            const response = await fetch(endpoint, {
-              method: "POST",
-              headers,
-              body: JSON.stringify({
-                model: candidate,
-                messages,
-                stream: true,
-                temperature: 0.7,
-                max_tokens: 8192
-              })
-            });
-
-            if (!response.ok || !response.body) continue;
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = "";
-            let accumulated = "";
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split("\n");
-              buffer = lines.pop() || "";
-
-              for (const line of lines) {
-                const tr = line.trim();
-                if (!tr) continue;
-                if (tr === "data: [DONE]" || tr === "[DONE]") break;
-                if (tr.startsWith("data: ")) {
-                  try {
-                    const parsed = JSON.parse(tr.slice(6));
-                    const chunk = parsed.choices?.[0]?.delta?.content || "";
-                    if (chunk) {
-                      accumulated += chunk;
-                      controller.enqueue(encoder.encode("data: " + JSON.stringify({ modelIndex: modelIdx, modelId: model.id, content: chunk }) + "\n\n"));
-                      if (detectRepetition(accumulated)) break;
-                    }
-                  } catch (e) {}
-                }
-              }
-            }
-
-            if (accumulated.length > 0) {
-              success = true;
-              break;
-            }
-          } catch (e) {}
-        }
-
-        if (!success) {
-          controller.enqueue(encoder.encode("data: " + JSON.stringify({ modelIndex: modelIdx, modelId: model.id, content: "⚠️ Model temporarily busy. Please retry." }) + "\n\n"));
+    if (Array.isArray(history) && history.length > 0) {
+      history.forEach((h: any) => {
+        if (h.role === "user") messages.push({ role: "user", content: String(h.content) });
+        else if (h.role === "assistant" && (h.modelIndex === undefined || h.modelIndex === modelIdx)) {
+          messages.push({ role: "assistant", content: String(h.content) });
         }
       });
+    } else {
+      messages.push({ role: "user", content: prompt });
+    }
 
-      await Promise.all(modelPromises);
-      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-      controller.close();
+    let success = false;
+    for (const candidate of candidateModels) {
+      if (success) break;
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            model: candidate,
+            messages,
+            stream: true,
+            temperature: 0.7,
+            max_tokens: 8192
+          })
+        });
+
+        if (!response.ok || !response.body) continue;
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let accumulated = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const tr = line.trim();
+            if (!tr) continue;
+            if (tr === "data: [DONE]" || tr === "[DONE]") break;
+            if (tr.startsWith("data: ")) {
+              try {
+                const parsed = JSON.parse(tr.slice(6));
+                const chunk = parsed.choices?.[0]?.delta?.content || "";
+                if (chunk) {
+                  accumulated += chunk;
+                  res.write("data: " + JSON.stringify({ modelIndex: modelIdx, modelId: model.id, content: chunk }) + "\n\n");
+                  if (detectRepetition(accumulated)) break;
+                }
+              } catch (e) {}
+            }
+          }
+        }
+
+        if (accumulated.length > 0) {
+          success = true;
+          break;
+        }
+      } catch (e) {}
+    }
+
+    if (!success) {
+      res.write("data: " + JSON.stringify({ modelIndex: modelIdx, modelId: model.id, content: "⚠️ Model temporarily busy. Please retry." }) + "\n\n");
     }
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "*"
-    }
-  });
+  await Promise.all(modelPromises);
+  res.write("data: [DONE]\n\n");
+  res.end();
 };
