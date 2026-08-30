@@ -1,0 +1,281 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: var(--bg-base);
+  --color-glass: var(--bg-surface);
+  --color-cream: var(--text-primary);
+  --color-muted-tan: var(--text-muted);
+  --color-claude: var(--accent-primary);
+  --color-emerald-status: #10B981;
+}
+
+:root {
+  /* Normal Mode */
+  --bg-base: #181715;
+  --bg-surface: #22201D;
+  --border-subtle: #2E2B27;
+  --text-primary: #F5F2EB;
+  --text-muted: #A89F91;
+  --accent-primary: #D97757;
+  --bg-code: #121110;
+  
+  --glass-bg: color-mix(in srgb, #22201D 55%, transparent);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  
+  --pill-bg: #1C1C1E;
+}
+
+.swamp-mode {
+  /* Only defining a special swamp text color & subtle green glow. All other vars inherit from :root */
+  --text-swamp: #e6f9ed; /* Soft mint / light emerald */
+}
+
+/* Apply gentle green text glow exclusively to regular prose and typography in swamp mode */
+.swamp-mode:not(.vibe-mode) .markdown-body > p,
+.swamp-mode:not(.vibe-mode) .markdown-body p,
+.swamp-mode:not(.vibe-mode) .markdown-body li,
+.swamp-mode:not(.vibe-mode) .markdown-body h1,
+.swamp-mode:not(.vibe-mode) .markdown-body h2,
+.swamp-mode:not(.vibe-mode) .markdown-body h3,
+.swamp-mode:not(.vibe-mode) .markdown-body h4,
+.swamp-mode:not(.vibe-mode) .markdown-body h5,
+.swamp-mode:not(.vibe-mode) .markdown-body h6,
+.swamp-mode:not(.vibe-mode) .markdown-body strong,
+.swamp-mode:not(.vibe-mode) .markdown-body em,
+.swamp-mode:not(.vibe-mode) .markdown-body blockquote,
+.swamp-mode:not(.vibe-mode) .markdown-body th,
+.swamp-mode:not(.vibe-mode) .markdown-body td,
+.swamp-mode:not(.vibe-mode) .swamp-glow {
+  color: var(--text-swamp);
+  text-shadow: 0 0 5px rgba(74, 222, 128, 0.45), 0 0 12px rgba(34, 197, 94, 0.22);
+}
+
+/* Vibe Coding Mode: Light Purple and Pink Mixture Glow */
+.vibe-mode {
+  --text-vibe: #fae8ff; /* Soft ethereal lavender */
+  --accent-vibe-pink: #f472b6;
+  --accent-vibe-purple: #c084fc;
+}
+
+.vibe-mode .markdown-body > p,
+.vibe-mode .markdown-body p,
+.vibe-mode .markdown-body li,
+.vibe-mode .markdown-body h1,
+.vibe-mode .markdown-body h2,
+.vibe-mode .markdown-body h3,
+.vibe-mode .markdown-body h4,
+.vibe-mode .markdown-body h5,
+.vibe-mode .markdown-body h6,
+.vibe-mode .markdown-body strong,
+.vibe-mode .markdown-body em,
+.vibe-mode .markdown-body blockquote,
+.vibe-mode .markdown-body th,
+.vibe-mode .markdown-body td,
+.vibe-mode .vibe-glow {
+  color: #fae8ff;
+  text-shadow: 0 0 6px rgba(244, 114, 182, 0.7), 0 0 14px rgba(192, 132, 252, 0.45), 0 0 24px rgba(232, 121, 249, 0.25);
+}
+
+/* Dual Mode: Swamp Swarm + Vibe Coding Optimization Active Together */
+.swamp-mode.vibe-mode .markdown-body > p,
+.swamp-mode.vibe-mode .markdown-body p,
+.swamp-mode.vibe-mode .markdown-body li,
+.swamp-mode.vibe-mode .markdown-body h1,
+.swamp-mode.vibe-mode .markdown-body h2,
+.swamp-mode.vibe-mode .markdown-body h3,
+.swamp-mode.vibe-mode .markdown-body h4,
+.swamp-mode.vibe-mode .markdown-body h5,
+.swamp-mode.vibe-mode .markdown-body h6,
+.swamp-mode.vibe-mode .markdown-body strong,
+.swamp-mode.vibe-mode .markdown-body em,
+.swamp-mode.vibe-mode .markdown-body blockquote,
+.swamp-mode.vibe-mode .markdown-body th,
+.swamp-mode.vibe-mode .markdown-body td {
+  color: #fdf4ff;
+  text-shadow: 0 0 6px rgba(244, 114, 182, 0.65), 0 0 13px rgba(74, 222, 128, 0.4), 0 0 22px rgba(192, 132, 252, 0.35);
+}
+
+/* Luminous Syntax Text Glow in Code Blocks across All Modes */
+.markdown-body pre code,
+.markdown-body pre code span,
+.markdown-body [class*="language-"],
+.markdown-body [class*="language-"] span {
+  text-shadow: 0 0 6px currentColor, 0 0 14px currentColor !important;
+}
+
+/* Keep inline code distinct and clean with subtle aura */
+.markdown-body :not(pre) > code {
+  color: #a7f3d0;
+  text-shadow: 0 0 5px currentColor !important;
+}
+
+.vibe-mode .markdown-body :not(pre) > code {
+  color: #f5d0fe;
+  text-shadow: 0 0 6px rgba(232, 121, 249, 0.6) !important;
+}
+
+.performance-mode .markdown-body :not(pre) > code {
+  color: #bae6fd;
+  text-shadow: 0 0 6px rgba(56, 189, 248, 0.6) !important;
+}
+
+/* Performance Mode: Deep Royal Sapphire & Electric Cyan Glow */
+.performance-mode {
+  --bg-base: #060b18;
+  --bg-secondary: #0a1329;
+  --bg-code: #030712;
+  --pill-bg: rgba(14, 165, 233, 0.08);
+  --glass-bg: rgba(6, 11, 24, 0.85);
+  --glass-border: rgba(56, 189, 248, 0.35);
+  --text-primary: #f0f9ff;
+  --text-muted: #94a3b8;
+  --accent-primary: #38bdf8;
+  --accent-secondary: #2563eb;
+  --accent-glow: 0 0 25px rgba(56, 189, 248, 0.45);
+  --text-performance: #e0f2fe;
+  --accent-performance-blue: #38bdf8;
+  --accent-performance-deep: #2563eb;
+  --accent-performance-glow: rgba(56, 189, 248, 0.45);
+}
+
+.performance-mode .markdown-body > p,
+.performance-mode .markdown-body p,
+.performance-mode .markdown-body li,
+.performance-mode .markdown-body h1,
+.performance-mode .markdown-body h2,
+.performance-mode .markdown-body h3,
+.performance-mode .markdown-body h4,
+.performance-mode .markdown-body h5,
+.performance-mode .markdown-body h6,
+.performance-mode .markdown-body strong,
+.performance-mode .markdown-body em,
+.performance-mode .markdown-body blockquote,
+.performance-mode .markdown-body th,
+.performance-mode .markdown-body td,
+.performance-mode .performance-glow {
+  color: #e0f2fe;
+  text-shadow: 0 0 6px rgba(56, 189, 248, 0.75), 0 0 16px rgba(37, 99, 235, 0.45), 0 0 26px rgba(14, 165, 233, 0.3);
+}
+
+/* Apple Liquid Glass Design System */
+.apple-liquid-glass {
+  background: rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+
+.apple-liquid-glass-swamp {
+  background: linear-gradient(180deg, rgba(74, 222, 128, 0.08) 0%, rgba(6, 20, 12, 0.88) 100%);
+  backdrop-filter: blur(45px) saturate(220%);
+  -webkit-backdrop-filter: blur(45px) saturate(220%);
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  box-shadow: inset 0 1px 2px rgba(74, 222, 128, 0.45), 0 20px 60px rgba(74, 222, 128, 0.25);
+}
+
+.apple-liquid-glass-vibe {
+  background: linear-gradient(180deg, rgba(236, 72, 153, 0.08) 0%, rgba(15, 10, 26, 0.88) 100%);
+  backdrop-filter: blur(45px) saturate(220%);
+  -webkit-backdrop-filter: blur(45px) saturate(220%);
+  border: 1px solid rgba(236, 72, 153, 0.38);
+  box-shadow: inset 0 1px 2px rgba(244, 114, 182, 0.45), 0 20px 60px rgba(236, 72, 153, 0.25);
+}
+
+.apple-liquid-glass-performance {
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.1) 0%, rgba(10, 18, 38, 0.9) 100%);
+  backdrop-filter: blur(45px) saturate(220%);
+  -webkit-backdrop-filter: blur(45px) saturate(220%);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  box-shadow: inset 0 1px 2px rgba(56, 189, 248, 0.5), 0 20px 60px rgba(37, 99, 235, 0.25);
+}
+
+@keyframes liquid-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-liquid-shimmer {
+  animation: liquid-shimmer 3s ease-in-out infinite;
+}
+
+@keyframes aura-breathe {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.02);
+  }
+}
+
+.animate-aura-breathe {
+  animation: aura-breathe 4s ease-in-out infinite;
+}
+
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; transform: scaleY(1); }
+  50% { opacity: 0.2; transform: scaleY(0.85); }
+}
+
+.streaming-caret {
+  display: inline-block;
+  width: 2.5px;
+  height: 1.15em;
+  vertical-align: -0.18em;
+  margin-left: 3px;
+  border-radius: 1px;
+  background-color: var(--accent-primary);
+  box-shadow: 0 0 10px var(--accent-primary);
+  animation: caret-blink 0.75s ease-in-out infinite;
+}
+
+@keyframes antigravity-float {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-5px) scale(1.01);
+  }
+}
+
+.antigravity-pulse {
+  animation: antigravity-float 5s ease-in-out infinite;
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.8s cubic-bezier(0.2, 0, 0, 1), color 0.8s cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Ultra-smooth GPU accelerated scrolling */
+.smooth-scroll-viewport {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* Hide scrollbar for mobile carousel */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+}

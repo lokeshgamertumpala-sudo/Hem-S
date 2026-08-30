@@ -1,0 +1,8 @@
+{
+  "name": "Hem'S",
+  "description": "Multi-model AI Swarm & Comparison application.",
+  "requestFramePermissions": [
+    "clipboard-write"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
