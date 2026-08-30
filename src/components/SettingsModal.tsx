@@ -137,8 +137,26 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   <div>
                     <h4 className="text-xs font-semibold text-[#F5F2EB]">AI Model API Keys</h4>
                     <p className="text-[11px] text-[#A89F91] leading-relaxed mt-0.5">
-                      Supports <strong>NVIDIA NIM</strong> (<code className="text-[#f5d0fe]">nvapi-...</code>), <strong>OpenRouter</strong> (<code className="text-[#f5d0fe]">sk-or-...</code>), <strong>Groq</strong>, or <strong>DeepSeek</strong>.
+                      Enter your keys below. For 100% free standalone mobile execution with zero server:
                     </p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <a
+                        href="https://console.groq.com/keys"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[10px] font-medium hover:bg-emerald-500/20 transition-all"
+                      >
+                        ⚡ Free Groq Key (500 tps)
+                      </a>
+                      <a
+                        href="https://openrouter.ai/keys"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-[10px] font-medium hover:bg-indigo-500/20 transition-all"
+                      >
+                        🌐 Free OpenRouter (NVIDIA Models)
+                      </a>
+                    </div>
                   </div>
                 </div>
 
