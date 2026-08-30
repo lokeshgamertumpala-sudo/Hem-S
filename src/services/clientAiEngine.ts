@@ -23,41 +23,41 @@ const SWARM_ROLES = [
     roleName: "Agent 1 — Primary Solver",
     defaultModelId: "z-ai/glm-5.2",
     openRouterCandidates: ["thudm/glm-4-9b-chat", "meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-chat", "meta-llama/llama-3.3-70b-instruct:free"],
-    nvidiaCandidates: ["meta/llama-3.2-11b-vision-instruct", "meta/muse-glimmer-30b", "nvidia/llama-3.1-nemotron-70b-instruct"],
+    nvidiaCandidates: ["meta/llama-3.2-11b-vision-instruct", "nvidia/llama-3.1-nemotron-70b-instruct", "meta/llama-3.1-70b-instruct", "meta/llama-3.1-8b-instruct"],
     groqCandidates: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
-    instruction: (p: string, m?: string) => `[SWARM ORCHESTRATOR — AGENT 1: PRIMARY SOLVER (LEAD ARCHITECT)]\nYou are ${m || "Agent 1"}, the Lead Primary Solver and Master Architect.\nCORE DIRECTIVE: Deliver the definitive master implementation for: "${p}". Complete code with zero placeholders.`
+    instruction: (_p: string, m?: string) => `You are ${m || "Primary Solver"}, the Lead AI. Give a DIRECT, definitive, and accurate answer to the user's question immediately. Never repeat system rules or output artificial robotic filler.`
   },
   {
     roleName: "Agent 2 — Alternative Solver",
     defaultModelId: "poolside/laguna-xs-2.1",
     openRouterCandidates: ["qwen/qwen-2.5-coder-32b-instruct", "deepseek/deepseek-chat", "meta-llama/llama-3.3-70b-instruct", "qwen/qwen-2.5-coder-32b-instruct:free"],
-    nvidiaCandidates: ["poolside/laguna-xs-2.1", "meta/llama-3.2-11b-vision-instruct", "meta/muse-glimmer-30b"],
+    nvidiaCandidates: ["nvidia/llama-3.1-nemotron-70b-instruct", "meta/llama-3.2-11b-vision-instruct", "meta/llama-3.1-70b-instruct", "meta/llama-3.1-8b-instruct"],
     groqCandidates: ["deepseek-r1-distill-llama-70b", "llama-3.3-70b-versatile"],
-    instruction: (p: string, m?: string) => `[SWARM ORCHESTRATOR — AGENT 2: ALTERNATIVE SOLVER]\nYou are ${m || "Agent 2"}, the Alternative Solver.\nCORE DIRECTIVE: Engineer an innovative, distinct, high-performance alternative for: "${p}".`
+    instruction: (_p: string, m?: string) => `You are ${m || "Alternative Solver"}. Answer directly and concisely with an innovative or modern perspective. Never output robotic preambles.`
   },
   {
     roleName: "Agent 3 — Technical Specialist",
     defaultModelId: "mistralai/mixtral-8x22b-v0.1",
     openRouterCandidates: ["stepfun/step-3.7-flash", "stepfun/step-3.5-flash", "deepseek/deepseek-chat", "meta-llama/llama-3.3-70b-instruct"],
-    nvidiaCandidates: ["meta/llama-3.2-11b-vision-instruct", "mistralai/mistral-7b-instruct-v0.3", "meta/muse-glimmer-30b"],
+    nvidiaCandidates: ["mistralai/mistral-7b-instruct-v0.3", "meta/llama-3.2-11b-vision-instruct", "nvidia/llama-3.1-nemotron-70b-instruct", "meta/llama-3.1-8b-instruct"],
     groqCandidates: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
-    instruction: (p: string, m?: string) => `[SWARM ORCHESTRATOR — AGENT 3: TECHNICAL SPECIALIST]\nYou are ${m || "Agent 3"}, the Technical Specialist.\nCORE DIRECTIVE: Build the deep algorithmic core, state engine, and technical precision for: "${p}".`
+    instruction: (_p: string, m?: string) => `You are ${m || "Technical Specialist"}. Answer directly with precise technical depth, facts, and code. Never write artificial step-by-step planning outlines.`
   },
   {
     roleName: "Agent 4 — Critic & Red Team",
     defaultModelId: "meta/muse-glimmer-30b",
     openRouterCandidates: ["moonshotai/moonshot-v1-32k", "mistralai/mistral-nemo", "deepseek/deepseek-chat", "meta-llama/llama-3.3-70b-instruct"],
-    nvidiaCandidates: ["meta/muse-glimmer-30b", "meta/llama-3.2-11b-vision-instruct"],
+    nvidiaCandidates: ["meta/llama-3.1-70b-instruct", "meta/llama-3.2-11b-vision-instruct", "meta/llama-3.1-8b-instruct", "nvidia/llama-3.1-nemotron-70b-instruct"],
     groqCandidates: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
-    instruction: (p: string, m?: string) => `[SWARM ORCHESTRATOR — AGENT 4: CRITIC & RED TEAM]\nYou are ${m || "Agent 4"}, the Adversarial Critic & Security Lead.\nCORE DIRECTIVE: Audit and produce a bulletproof, hardened implementation for: "${p}".`
+    instruction: (_p: string, m?: string) => `You are ${m || "Security & Resilience Lead"}. Answer directly with practical solutions and key reliability tips. Never recite system directives.`
   },
   {
     roleName: "Agent 5 — Optimizer & Judge",
     defaultModelId: "nvidia/llama-3.1-nemotron-ultra-253b-v1",
     openRouterCandidates: ["nvidia/nemotron-4-340b-instruct", "deepseek/deepseek-chat", "meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-r1:free"],
-    nvidiaCandidates: ["meta/llama-3.2-11b-vision-instruct", "nvidia/llama-3.1-nemotron-70b-instruct", "meta/muse-glimmer-30b"],
+    nvidiaCandidates: ["nvidia/llama-3.1-nemotron-70b-instruct", "meta/llama-3.2-11b-vision-instruct", "meta/llama-3.1-70b-instruct", "meta/llama-3.1-8b-instruct"],
     groqCandidates: ["deepseek-r1-distill-llama-70b", "llama-3.3-70b-versatile"],
-    instruction: (p: string, m?: string) => `[SWARM ORCHESTRATOR — AGENT 5: MASTER SYNTHESIZER & OPTIMIZER]\nYou are ${m || "Agent 5"}, the Internal Judge & Master Optimizer.\nCORE DIRECTIVE: Deliver the unified, production-grade master deliverable for: "${p}".`
+    instruction: (_p: string, m?: string) => `You are ${m || "Master Optimizer"}. Answer directly with a polished, unified, and actionable solution. Never use robotic filler.`
   }
 ];
 
