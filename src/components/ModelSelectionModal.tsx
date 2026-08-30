@@ -201,17 +201,20 @@ export function ModelSelectionModal({ isOpen, onClose }: ModelSelectionModalProp
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-2xl bg-[#141312]/80"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-2xl bg-[#141312]/80"
           onClick={onClose}
         >
           <motion.div
-            initial={{ scale: 0.95, opacity: 0, y: 20 }}
+            initial={{ scale: 0.95, opacity: 0, y: 30 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: 20 }}
+            exit={{ scale: 0.95, opacity: 0, y: 30 }}
             transition={{ type: "spring", stiffness: 400, damping: 35, mass: 0.9 }}
-            className="w-full max-w-4xl h-[85vh] max-h-[800px] flex flex-col rounded-[28px] backdrop-blur-3xl bg-[var(--glass-bg)] border border-[var(--glass-border)] shadow-[var(--glass-shadow)] overflow-hidden"
+            className="w-full max-w-4xl h-[92vh] sm:h-[85vh] max-h-[820px] flex flex-col rounded-t-[28px] sm:rounded-[28px] backdrop-blur-3xl bg-[var(--glass-bg)] border border-[var(--glass-border)] shadow-[var(--glass-shadow)] overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Mobile Sheet Grabber Handle */}
+            <div className="sm:hidden w-10 h-1 rounded-full bg-white/20 mx-auto mt-2.5 mb-1 shrink-0" />
+
             {/* Header */}
             <div className="px-6 py-4 flex items-center justify-between border-b border-[var(--glass-border)] shrink-0">
               <div className="flex items-center gap-3">

@@ -68,21 +68,21 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   return (
     <AnimatePresence>
       {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-2xl bg-[#141312]/80"
+        <div 
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-md"
           onClick={onClose}
         >
           <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
+            initial={{ scale: 0.95, opacity: 0, y: 30 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0, y: 30 }}
             transition={{ type: "spring", stiffness: 380, damping: 32, mass: 0.8 }}
-            className="w-full max-w-lg rounded-[28px] backdrop-blur-3xl bg-[#22201D]/90 border border-[#F5F2EB]/10 shadow-[0_12px_60px_rgba(0,0,0,0.6)] overflow-hidden flex flex-col apple-liquid-glass"
+            className="w-full max-w-lg max-h-[92vh] sm:max-h-[88vh] rounded-t-[28px] sm:rounded-[28px] backdrop-blur-3xl bg-[#22201D]/95 border border-[#F5F2EB]/10 shadow-[0_12px_60px_rgba(0,0,0,0.6)] overflow-hidden flex flex-col apple-liquid-glass"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Mobile Sheet Grabber Handle */}
+            <div className="sm:hidden w-10 h-1 rounded-full bg-white/20 mx-auto mt-2.5 mb-1 shrink-0" />
+
             {/* Header */}
             <div className="px-6 py-5 flex items-center justify-between border-b border-[#F5F2EB]/5">
               <div className="flex items-center gap-3">
@@ -303,7 +303,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               )}
             </div>
           </motion.div>
-        </motion.div>
+        </div>
       )}
     </AnimatePresence>
   );

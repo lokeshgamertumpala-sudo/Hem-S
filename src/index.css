@@ -252,10 +252,12 @@ body {
   margin: 0;
   padding: 0;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
   text-rendering: optimizeLegibility;
   transition: background-color 0.8s cubic-bezier(0.2, 0, 0, 1), color 0.8s cubic-bezier(0.2, 0, 0, 1);
 }
@@ -269,13 +271,19 @@ body {
   perspective: 1000px;
 }
 
+/* Safe Area Insets for Notch / Dynamic Island / Bottom Bar */
+.safe-pb {
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
+}
+.safe-pt {
+  padding-top: max(12px, env(safe-area-inset-top, 12px));
+}
+
 /* Hide scrollbar for mobile carousel */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 .no-scrollbar {
   -ms-overflow-style: none;
-  /* IE and Edge */
   scrollbar-width: none;
-  /* Firefox */
 }

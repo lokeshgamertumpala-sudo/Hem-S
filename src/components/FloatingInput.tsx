@@ -175,7 +175,7 @@ export function FloatingInput({ onSend, onStop, isStreaming }: FloatingInputProp
             }
           }}
           placeholder={getPlaceholder()}
-          className={`flex-1 max-h-[160px] sm:max-h-[200px] min-h-[38px] sm:min-h-[44px] bg-transparent border-none outline-none resize-none py-2 sm:py-2.5 px-1.5 sm:px-3 text-sm sm:text-[15px] leading-[22px] sm:leading-[26px] -tracking-tight overflow-y-auto transition-colors duration-300 ${
+          className={`flex-1 max-h-[160px] sm:max-h-[200px] min-h-[40px] sm:min-h-[44px] bg-transparent border-none outline-none resize-none py-2 sm:py-2.5 px-2 sm:px-3 text-base sm:text-[15px] leading-[22px] sm:leading-[26px] -tracking-tight overflow-y-auto transition-colors duration-300 ${
             isPerformance
               ? 'placeholder:text-sky-300/70 placeholder:[text-shadow:0_0_10px_rgba(56,189,248,0.5)] text-[#f0f9ff] [text-shadow:0_0_12px_rgba(56,189,248,0.9),0_0_24px_rgba(37,99,235,0.5)]'
               : isVibe
