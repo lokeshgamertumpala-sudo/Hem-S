@@ -579,7 +579,7 @@ export async function createExpressServer(isServerless = false) {
   });
 
   app.use(express.json({ limit: "25mb" }));
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   // Stream endpoint handling both /api/stream and /api/swarm with REAL AI models
   const handleStreamRequest = async (req: express.Request, res: express.Response) => {
