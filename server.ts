@@ -27,64 +27,165 @@ function detectRepetitionLoop(text: string): boolean {
   return false;
 }
 
-// Live Google & Real-Time Web Search Engine
+// Live Real-Time Multi-Provider Web Search Engine
 interface SearchResult {
   title: string;
   link: string;
   snippet: string;
 }
 
-async function searchGoogleWeb(query: string, maxResults = 5): Promise<SearchResult[]> {
-  try {
-    const cleanQuery = query.replace(/[^\w\s\-\+\.]/g, " ").trim();
-    if (!cleanQuery) return [];
+function cleanSearchQuery(query: string): string {
+  if (!query) return "";
+  return query
+    .replace(/^(search(\s+(about|for|on|google|web|online|internet))?|google(\s+(about|for|this))?|find(\s+(me\s+)?(info\s+on|about|information\s+about))?|tell\s+me\s+about|what\s+is\s+the\s+latest\s+on)\s+/i, "")
+    .replace(/[^\w\s\-\+\.]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(cleanQuery)}`;
+async function searchGoogleWeb(rawQuery: string, maxResults = 5): Promise<SearchResult[]> {
+  const query = cleanSearchQuery(rawQuery) || rawQuery.trim();
+  if (!query) return [];
+
+  // Tier 1: DuckDuckGo HTML Search
+  try {
+    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4500);
 
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9"
       }
     });
     clearTimeout(timeout);
 
-    if (!res.ok) return [];
-    const html = await res.text();
-    const results: SearchResult[] = [];
+    if (res.ok) {
+      const html = await res.text();
+      const results: SearchResult[] = [];
+      const resultBlocks = html.split(/class=["'][^"']*result\s+results_links/i);
 
-    const resultBlocks = html.split(/class="[^"]*result\s+results_links/i);
-    for (let i = 1; i < Math.min(maxResults + 1, resultBlocks.length); i++) {
-      const block = resultBlocks[i];
-      const titleMatch = block.match(/<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
-      const urlMatch = block.match(/<a[^>]*class="[^"]*result__url[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
-      const linkMatch = block.match(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+      for (let i = 1; i < Math.min(maxResults + 1, resultBlocks.length); i++) {
+        const block = resultBlocks[i];
+        const linkMatch = block.match(/<a[^>]*class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+        const snippetMatch = block.match(/<[^>]*class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/[^>]+>/i);
 
-      const title = linkMatch ? linkMatch[2].replace(/<[^>]+>/g, "").trim() : "";
-      let rawUrl = (linkMatch ? linkMatch[1] : (urlMatch ? urlMatch[1] : "")).trim();
-      if (rawUrl.includes("uddg=")) {
-        const m = rawUrl.match(/uddg=([^&]+)/);
-        if (m) rawUrl = decodeURIComponent(m[1]);
+        let rawUrl = linkMatch ? linkMatch[1].trim() : "";
+        if (rawUrl.includes("uddg=")) {
+          const m = rawUrl.match(/uddg=([^&]+)/);
+          if (m) rawUrl = decodeURIComponent(m[1]);
+        }
+
+        const title = linkMatch ? linkMatch[2].replace(/<[^>]+>/g, "").trim() : "";
+        const snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]+>/g, "").trim() : "";
+
+        if (title || snippet) {
+          results.push({
+            title: title || "Web Resource",
+            link: rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`,
+            snippet
+          });
+        }
       }
-      const snippet = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : "";
 
-      if (title || snippet) {
-        results.push({
-          title: title || "Web Resource",
-          link: rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`,
-          snippet
+      if (results.length > 0) return results;
+    }
+  } catch (err) {
+    // Fall through to Tier 2
+  }
+
+  // Tier 2: DuckDuckGo Lite Fallback
+  try {
+    const liteUrl = `https://lite.duckduckgo.com/lite/`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+
+    const res = await fetch(liteUrl, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      },
+      body: `q=${encodeURIComponent(query)}`
+    });
+    clearTimeout(timeout);
+
+    if (res.ok) {
+      const html = await res.text();
+      const results: SearchResult[] = [];
+      const linkRegex = /<a[^>]*class=['"]result-link['"][^>]*href=['"]([^'"]+)['"][^>]*>([\s\S]*?)<\/a>/gi;
+      const snippetRegex = /<td[^>]*class=['"]result-snippet['"][^>]*>([\s\S]*?)<\/td>/gi;
+
+      const links: { url: string; title: string }[] = [];
+      let match;
+      while ((match = linkRegex.exec(html)) !== null && links.length < maxResults) {
+        let rawUrl = match[1];
+        if (rawUrl.includes("uddg=")) {
+          const m = rawUrl.match(/uddg=([^&]+)/);
+          if (m) rawUrl = decodeURIComponent(m[1]);
+        }
+        links.push({
+          url: rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`,
+          title: match[2].replace(/<[^>]+>/g, "").trim()
         });
       }
+
+      const snippets: string[] = [];
+      while ((match = snippetRegex.exec(html)) !== null && snippets.length < maxResults) {
+        snippets.push(match[1].replace(/<[^>]+>/g, "").trim());
+      }
+
+      for (let i = 0; i < links.length; i++) {
+        results.push({
+          title: links[i].title || "Web Result",
+          link: links[i].url,
+          snippet: snippets[i] || ""
+        });
+      }
+
+      if (results.length > 0) return results;
     }
-    return results;
   } catch (err) {
-    console.error("Live web search error:", err);
-    return [];
+    // Fall through to Tier 3
   }
+
+  // Tier 3: Wikipedia & Open Knowledge Fallback
+  try {
+    const wikiUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=${maxResults}&namespace=0&format=json`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3500);
+
+    const res = await fetch(wikiUrl, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Hem-S-SearchEngine/2.0" }
+    });
+    clearTimeout(timeout);
+
+    if (res.ok) {
+      const data = await res.json();
+      const titles = data[1] || [];
+      const snippets = data[2] || [];
+      const links = data[3] || [];
+      const results: SearchResult[] = [];
+
+      for (let i = 0; i < titles.length; i++) {
+        if (titles[i] && links[i]) {
+          results.push({
+            title: titles[i],
+            link: links[i],
+            snippet: snippets[i] || ""
+          });
+        }
+      }
+      if (results.length > 0) return results;
+    }
+  } catch (err) {}
+
+  return [];
 }
 
 // 5 Dedicated Swarm/Swamp Roles definition
@@ -110,8 +211,9 @@ const SWARM_ROLES: SwarmRoleConfig[] = [
     ],
     nvidiaCandidates: [
       "meta/llama-3.2-11b-vision-instruct",
-      "meta/muse-glimmer-30b",
-      "nvidia/llama-3.1-nemotron-70b-instruct"
+      "nvidia/llama-3.1-nemotron-70b-instruct",
+      "meta/llama-3.1-70b-instruct",
+      "meta/llama-3.1-8b-instruct"
     ],
     groqCandidates: [
       "llama-3.3-70b-versatile",
@@ -137,9 +239,10 @@ CORE DIRECTIVE:
       "deepseek/deepseek-r1:free"
     ],
     nvidiaCandidates: [
-      "poolside/laguna-xs-2.1",
+      "nvidia/llama-3.1-nemotron-70b-instruct",
       "meta/llama-3.2-11b-vision-instruct",
-      "meta/muse-glimmer-30b"
+      "meta/llama-3.1-70b-instruct",
+      "meta/llama-3.1-8b-instruct"
     ],
     groqCandidates: [
       "deepseek-r1-distill-llama-70b",
@@ -165,9 +268,10 @@ CORE DIRECTIVE:
       "deepseek/deepseek-r1:free"
     ],
     nvidiaCandidates: [
-      "meta/llama-3.2-11b-vision-instruct",
       "mistralai/mistral-7b-instruct-v0.3",
-      "meta/muse-glimmer-30b"
+      "meta/llama-3.2-11b-vision-instruct",
+      "nvidia/llama-3.1-nemotron-70b-instruct",
+      "meta/llama-3.1-8b-instruct"
     ],
     groqCandidates: [
       "llama-3.3-70b-versatile",
@@ -192,8 +296,10 @@ CORE DIRECTIVE:
       "mistralai/mistral-7b-instruct:free"
     ],
     nvidiaCandidates: [
-      "meta/muse-glimmer-30b",
-      "meta/llama-3.2-11b-vision-instruct"
+      "meta/llama-3.1-70b-instruct",
+      "meta/llama-3.2-11b-vision-instruct",
+      "meta/llama-3.1-8b-instruct",
+      "nvidia/llama-3.1-nemotron-70b-instruct"
     ],
     groqCandidates: [
       "llama-3.3-70b-versatile",
@@ -218,9 +324,10 @@ CORE DIRECTIVE:
       "deepseek/deepseek-r1:free"
     ],
     nvidiaCandidates: [
-      "meta/llama-3.2-11b-vision-instruct",
       "nvidia/llama-3.1-nemotron-70b-instruct",
-      "meta/muse-glimmer-30b"
+      "meta/llama-3.2-11b-vision-instruct",
+      "meta/llama-3.1-70b-instruct",
+      "meta/llama-3.1-8b-instruct"
     ],
     groqCandidates: [
       "deepseek-r1-distill-llama-70b",
@@ -611,7 +718,7 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
 
     // Real-Time Google & Web Search Grounding
     const isClockQuery = /(what('?s|\s+is)?\s+(the\s+)?(time|date|day)|current\s+(time|date)|what\s+time|time\s+now|time\s+in\s+)/i.test(prompt);
-    const isExplicitSearchQuery = /(search\s+(google|web|online|internet)|google\s+this|latest\s+news|breaking\s+news)/i.test(prompt);
+    const isExplicitSearchQuery = /(search(\s+(about|for|on|google|web|online|internet))?|google|who\s+is|what\s+happened|latest|news|weather|price|stock|schedule|event|hackathon|hackerthon)/i.test(prompt);
     
     const isWebSearchExplicit = Boolean(webSearch);
     const hasWebSearchSkill = Array.isArray(skills) && skills.some((s: any) => 
