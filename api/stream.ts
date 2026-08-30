@@ -63,9 +63,24 @@ export default async function handler(req: any, res: any) {
   }
 
   let body: any = req.body;
-  if (!body || typeof body !== "object") {
-    try { body = typeof body === "string" ? JSON.parse(body) : {}; } catch (e) { body = {}; }
+  if (!body || typeof body !== "object" || Object.keys(body).length === 0) {
+    if (typeof body === "string") {
+      try { body = JSON.parse(body); } catch (e) { body = {}; }
+    } else {
+      try {
+        const rawBody = await new Promise((resolve) => {
+          let chunks = "";
+          req.on("data", (chunk: any) => (chunks += chunk));
+          req.on("end", () => resolve(chunks));
+          req.on("error", () => resolve(""));
+        });
+        if (rawBody) {
+          body = JSON.parse(rawBody as string);
+        }
+      } catch (e) { body = {}; }
+    }
   }
+  if (!body) body = {};
 
   const { prompt, apiKeys = [], models = [], history = [], clientTimestamp, clientTimezone, clientLocaleString } = body;
 
@@ -80,10 +95,12 @@ export default async function handler(req: any, res: any) {
 
   const temporalDirective = "\n\n[LIVE REAL-TIME CLOCK & TEMPORAL CONTEXT]\n• User Local Time: " + localStr + " (" + tz + ")\n• Indian Standard Time (IST): " + istStr + "\n• UTC Time: " + now.toUTCString() + "\n• Current Year: " + now.getUTCFullYear() + "\nMANDATE: Whenever asked about time/date/day, strictly use the live clock above.";
 
-  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no"
+  });
 
   const collectedKeys: string[] = [
     ...apiKeys.filter((k: any) => typeof k === "string" && k.trim().length > 10),
