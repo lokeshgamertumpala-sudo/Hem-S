@@ -1480,12 +1480,15 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
 
   if (!isServerless) {
     if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-      const { createServer: createViteServer } = await import("vite");
-      const vite = await createViteServer({
-        server: { middlewareMode: true },
-        appType: "spa",
-      });
-      app.use(vite.middlewares);
+      try {
+        const viteModule = "vite";
+        const { createServer: createViteServer } = await import(viteModule);
+        const vite = await createViteServer({
+          server: { middlewareMode: true },
+          appType: "spa",
+        });
+        app.use(vite.middlewares);
+      } catch (e) {}
     } else {
       const distPath = path.join(process.cwd(), "dist");
       app.use(express.static(distPath));

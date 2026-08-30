@@ -1,4 +1,4 @@
-import { createExpressServer } from "../server.ts";
+import { createExpressServer } from "./server.js";
 
 let cachedApp: any = null;
 
