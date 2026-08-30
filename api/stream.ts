@@ -53,7 +53,7 @@ function detectRepetition(text) {
   return false;
 }
 
-export default async function handler(request) {
+export default async function handler(request: Request) {
   if (request.method === "OPTIONS") {
     return new Response(null, {
       status: 200,
@@ -72,7 +72,7 @@ export default async function handler(request) {
     });
   }
 
-  let body = {};
+  let body: any = {};
   try {
     body = await request.json();
   } catch (e) {}
@@ -93,13 +93,18 @@ export default async function handler(request) {
 
   const temporalDirective = "\n\n[LIVE REAL-TIME CLOCK & TEMPORAL CONTEXT]\n• User Local Time: " + localStr + " (" + tz + ")\n• Indian Standard Time (IST): " + istStr + "\n• UTC Time: " + now.toUTCString() + "\n• Current Year: " + now.getUTCFullYear() + "\nMANDATE: Whenever asked about time/date/day, strictly use the live clock above.";
 
-  const collectedKeys = [
-    ...apiKeys.filter(k => k && k.trim().length > 10),
-    process.env.NVIDIA_API_KEY,
-    process.env.OPENROUTER_API_KEY,
-    process.env.GROQ_API_KEY,
-    process.env.DEEPSEEK_API_KEY
-  ].filter(Boolean);
+  const envNvidia = typeof process !== "undefined" && process.env ? process.env.NVIDIA_API_KEY : undefined;
+  const envOpenRouter = typeof process !== "undefined" && process.env ? process.env.OPENROUTER_API_KEY : undefined;
+  const envGroq = typeof process !== "undefined" && process.env ? process.env.GROQ_API_KEY : undefined;
+  const envDeepSeek = typeof process !== "undefined" && process.env ? process.env.DEEPSEEK_API_KEY : undefined;
+
+  const collectedKeys: string[] = [
+    ...apiKeys.filter((k: any) => typeof k === "string" && k.trim().length > 10),
+    envNvidia,
+    envOpenRouter,
+    envGroq,
+    envDeepSeek
+  ].filter(Boolean) as string[];
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
