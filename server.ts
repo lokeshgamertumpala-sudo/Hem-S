@@ -1605,6 +1605,60 @@ CRITICAL MANDATE:
     }
   });
 
+  app.get("/api/terminal/files", (req, res) => {
+    try {
+      const baseDir = process.cwd();
+      const subDir = String(req.query.dir || "").trim();
+      const targetDir = subDir ? path.resolve(baseDir, subDir) : baseDir;
+
+      // Ensure no directory traversal outside project root
+      if (!targetDir.startsWith(baseDir)) {
+        return res.status(403).json({ error: "Access denied outside workspace root" });
+      }
+
+      if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+        return res.status(404).json({ error: "Directory not found" });
+      }
+
+      const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+      const files = entries
+        .filter(e => !e.name.startsWith(".git") && e.name !== "node_modules" && e.name !== "dist")
+        .map(e => {
+          const fullPath = path.join(targetDir, e.name);
+          const relPath = path.relative(baseDir, fullPath).replace(/\\/g, "/");
+          let size = 0;
+          try {
+            if (!e.isDirectory()) {
+              size = fs.statSync(fullPath).size;
+            }
+          } catch {}
+
+          return {
+            name: e.name,
+            path: relPath,
+            isDirectory: e.isDirectory(),
+            size
+          };
+        })
+        .sort((a, b) => {
+          if (a.isDirectory === b.isDirectory) return a.name.localeCompare(b.name);
+          return a.isDirectory ? -1 : 1;
+        });
+
+      const relCurrentDir = path.relative(baseDir, targetDir).replace(/\\/g, "/") || ".";
+      const isRoot = targetDir === baseDir;
+
+      res.json({
+        cwd: baseDir,
+        currentDir: relCurrentDir,
+        parentDir: !isRoot ? path.relative(baseDir, path.dirname(targetDir)).replace(/\\/g, "/") || "." : null,
+        files
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/terminal", async (req, res) => {
     const { command, code, language, cwd: customCwd, timeout = 30000 } = req.body || {};
     
