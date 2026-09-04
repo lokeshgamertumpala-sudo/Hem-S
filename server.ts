@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import os from "os";
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import { GoogleGenAI } from "@google/genai";
 
 let geminiClient: GoogleGenAI | null = null;
@@ -1659,8 +1659,279 @@ CRITICAL MANDATE:
     }
   });
 
+  interface TerminalSession {
+    id: string;
+    cwd: string;
+    shell: string;
+    activeProcess?: any;
+  }
+  const terminalSessions = new Map<string, TerminalSession>();
+
+  // Terminal session management
+  app.post("/api/terminal/session", (req, res) => {
+    const { id, shell } = req.body || {};
+    const sessionId = id || `term_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    let session = terminalSessions.get(sessionId);
+    const isWin = process.platform === "win32";
+    const defaultShell = shell || (isWin ? "powershell.exe" : (process.env.SHELL || "/bin/bash"));
+
+    if (!session) {
+      session = {
+        id: sessionId,
+        cwd: process.cwd(),
+        shell: defaultShell
+      };
+      terminalSessions.set(sessionId, session);
+    } else if (shell) {
+      session.shell = shell;
+    }
+
+    res.json({
+      id: session.id,
+      cwd: session.cwd,
+      shell: session.shell,
+      platform: os.platform()
+    });
+  });
+
+  // Autocomplete endpoint for Tab key
+  app.get("/api/terminal/autocomplete", (req, res) => {
+    try {
+      const dir = String(req.query.dir || "").trim();
+      const prefix = String(req.query.prefix || "").trim();
+      const baseDir = dir && fs.existsSync(dir) ? dir : process.cwd();
+
+      let searchDir = baseDir;
+      let filePrefix = prefix;
+
+      if (prefix.includes("/") || prefix.includes("\\")) {
+        const lastSep = Math.max(prefix.lastIndexOf("/"), prefix.lastIndexOf("\\"));
+        const subDir = prefix.slice(0, lastSep);
+        filePrefix = prefix.slice(lastSep + 1);
+        const candidateDir = path.resolve(baseDir, subDir);
+        if (fs.existsSync(candidateDir) && fs.statSync(candidateDir).isDirectory()) {
+          searchDir = candidateDir;
+        }
+      }
+
+      if (!fs.existsSync(searchDir) || !fs.statSync(searchDir).isDirectory()) {
+        return res.json({ matches: [] });
+      }
+
+      const entries = fs.readdirSync(searchDir, { withFileTypes: true });
+      const matches = entries
+        .filter(e => !e.name.startsWith(".git") && (!filePrefix || e.name.toLowerCase().startsWith(filePrefix.toLowerCase())))
+        .map(e => ({
+          name: e.name + (e.isDirectory() ? "/" : ""),
+          isDirectory: e.isDirectory()
+        }))
+        .slice(0, 25);
+
+      res.json({ matches });
+    } catch (e: any) {
+      res.json({ matches: [] });
+    }
+  });
+
+  // Terminate active running process (Ctrl+C / Kill)
+  app.post("/api/terminal/kill", (req, res) => {
+    const { sessionId, pid } = req.body || {};
+    let targetPid = pid;
+
+    if (!targetPid && sessionId) {
+      const session = terminalSessions.get(sessionId);
+      if (session?.activeProcess) {
+        targetPid = session.activeProcess.pid;
+      }
+    }
+
+    if (!targetPid) {
+      return res.json({ success: false, message: "No active process found to terminate" });
+    }
+
+    try {
+      if (process.platform === "win32") {
+        exec(`taskkill /pid ${targetPid} /T /F`, () => {});
+      } else {
+        try {
+          process.kill(-targetPid, "SIGINT");
+        } catch {
+          try {
+            process.kill(targetPid, "SIGINT");
+          } catch {}
+        }
+      }
+
+      if (sessionId) {
+        const session = terminalSessions.get(sessionId);
+        if (session) session.activeProcess = undefined;
+      }
+
+      res.json({ success: true, pid: targetPid });
+    } catch (e: any) {
+      res.json({ success: false, error: e.message });
+    }
+  });
+
+  // Real-time streaming terminal execution endpoint (Server-Sent Events)
+  app.post("/api/terminal/stream", async (req, res) => {
+    const { sessionId, command, code, language, shell: reqShell, timeout = 120000 } = req.body || {};
+    
+    let execCommand = (command || "").trim();
+
+    if (!execCommand && code) {
+      const lang = (language || "").toLowerCase();
+      if (lang === "python" || lang === "py") {
+        execCommand = `python -c ${JSON.stringify(code)}`;
+      } else if (lang === "javascript" || lang === "js" || lang === "node") {
+        execCommand = `node -e ${JSON.stringify(code)}`;
+      } else {
+        execCommand = code;
+      }
+    }
+
+    if (!execCommand) {
+      return res.status(400).json({ error: "Command or code is required" });
+    }
+
+    // Antigravity Security Guard (Rule 23)
+    for (const pattern of DANGEROUS_COMMAND_PATTERNS) {
+      if (pattern.test(execCommand)) {
+        res.setHeader("Content-Type", "text/event-stream");
+        res.write(`data: ${JSON.stringify({ type: "stderr", text: "Antigravity Security Guard: Execution blocked for destructive system command.\n" })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: "exit", code: 126, durationMs: 0 })}\n\n`);
+        res.write("data: [DONE]\n\n");
+        return res.end();
+      }
+    }
+
+    const isWin = process.platform === "win32";
+    const sid = sessionId || "default";
+    let session = terminalSessions.get(sid);
+    if (!session) {
+      session = {
+        id: sid,
+        cwd: process.cwd(),
+        shell: reqShell || (isWin ? "powershell.exe" : (process.env.SHELL || "/bin/bash"))
+      };
+      terminalSessions.set(sid, session);
+    } else if (reqShell) {
+      session.shell = reqShell;
+    }
+
+    if (!fs.existsSync(session.cwd)) {
+      session.cwd = process.cwd();
+    }
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    if (typeof (res as any).flushHeaders === "function") {
+      (res as any).flushHeaders();
+    }
+
+    const startTime = performance.now();
+    let shellExe = session.shell || (isWin ? "powershell.exe" : "/bin/bash");
+    let shellArgs: string[] = [];
+
+    if (isWin && /powershell/i.test(shellExe)) {
+      shellArgs = [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy", "Bypass",
+        "-Command",
+        `$OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${execCommand}; Write-Output ('__ANTIGRAVITY_CWD__' + (Get-Location).Path); if ($LASTEXITCODE) { exit $LASTEXITCODE }`
+      ];
+    } else if (isWin && /cmd/i.test(shellExe)) {
+      shellArgs = [
+        "/c",
+        `${execCommand} & echo __ANTIGRAVITY_CWD__%cd%`
+      ];
+    } else {
+      shellArgs = [
+        "-c",
+        `${execCommand}; printf '\n__ANTIGRAVITY_CWD__%s\n' "$(pwd)"`
+      ];
+    }
+
+    try {
+      const child = spawn(shellExe, shellArgs, {
+        cwd: session.cwd,
+        env: {
+          ...process.env,
+          FORCE_COLOR: "1",
+          TERM: "xterm-256color"
+        }
+      });
+
+      session.activeProcess = child;
+      res.write(`data: ${JSON.stringify({ type: "start", pid: child.pid, cwd: session.cwd })}\n\n`);
+
+      let cwdCandidate = session.cwd;
+
+      const handleChunk = (chunk: Buffer, streamType: "stdout" | "stderr") => {
+        const rawText = chunk.toString("utf8");
+        if (rawText.includes("__ANTIGRAVITY_CWD__")) {
+          const parts = rawText.split("__ANTIGRAVITY_CWD__");
+          const before = parts[0];
+          const rest = parts.slice(1).join("");
+          const lines = rest.split(/\r?\n/);
+          const rawCwd = lines[0]?.trim();
+          if (rawCwd && fs.existsSync(rawCwd)) {
+            cwdCandidate = rawCwd;
+          }
+          const remainingText = lines.slice(1).join("\n");
+          const outputToSend = (before + (remainingText ? "\n" + remainingText : "")).replace(/\r?\n$/, "");
+          if (outputToSend) {
+            res.write(`data: ${JSON.stringify({ type: streamType, text: outputToSend })}\n\n`);
+          }
+        } else {
+          res.write(`data: ${JSON.stringify({ type: streamType, text: rawText })}\n\n`);
+        }
+      };
+
+      child.stdout.on("data", (chunk: Buffer) => handleChunk(chunk, "stdout"));
+      child.stderr.on("data", (chunk: Buffer) => handleChunk(chunk, "stderr"));
+
+      child.on("error", (err) => {
+        res.write(`data: ${JSON.stringify({ type: "stderr", text: `\nError: ${err.message}\n` })}\n\n`);
+      });
+
+      const killTimeout = setTimeout(() => {
+        try {
+          if (isWin) {
+            exec(`taskkill /pid ${child.pid} /T /F`, () => {});
+          } else {
+            child.kill("SIGKILL");
+          }
+          res.write(`data: ${JSON.stringify({ type: "stderr", text: `\nExecution timed out after ${timeout / 1000}s\n` })}\n\n`);
+        } catch {}
+      }, timeout);
+
+      child.on("close", (code) => {
+        clearTimeout(killTimeout);
+        session.activeProcess = undefined;
+        if (cwdCandidate && fs.existsSync(cwdCandidate)) {
+          session.cwd = cwdCandidate;
+        }
+        const durationMs = Math.round(performance.now() - startTime);
+        const exitCode = typeof code === "number" ? code : 0;
+        res.write(`data: ${JSON.stringify({ type: "exit", code: exitCode, cwd: session.cwd, durationMs })}\n\n`);
+        res.write("data: [DONE]\n\n");
+        res.end();
+      });
+    } catch (err: any) {
+      res.write(`data: ${JSON.stringify({ type: "stderr", text: `Spawn error: ${err.message}\n` })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: "exit", code: 1, cwd: session.cwd, durationMs: 0 })}\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+    }
+  });
+
+  // Non-streaming execution endpoint (retained for backward compatibility and fast direct calls)
   app.post("/api/terminal", async (req, res) => {
-    const { command, code, language, cwd: customCwd, timeout = 30000 } = req.body || {};
+    const { command, code, language, cwd: customCwd, sessionId, timeout = 30000 } = req.body || {};
     
     let execCommand = (command || "").trim();
 
@@ -1695,7 +1966,14 @@ CRITICAL MANDATE:
       }
     }
 
-    const workingDir = customCwd && fs.existsSync(customCwd) ? customCwd : process.cwd();
+    let workingDir = customCwd && fs.existsSync(customCwd) ? customCwd : process.cwd();
+    if (sessionId && terminalSessions.has(sessionId)) {
+      const sess = terminalSessions.get(sessionId)!;
+      if (fs.existsSync(sess.cwd)) {
+        workingDir = sess.cwd;
+      }
+    }
+
     const startTime = performance.now();
     const timeoutMs = Math.min(Math.max(Number(timeout) || 30000, 1000), 120000);
     const execShell = process.platform === "win32" ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
