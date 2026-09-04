@@ -1773,6 +1773,21 @@ CRITICAL MANDATE:
     }
   });
 
+  // Interactive stdin input for active running process
+  app.post("/api/terminal/input", (req, res) => {
+    const { sessionId, input } = req.body || {};
+    const session = terminalSessions.get(sessionId);
+    if (session?.activeProcess && session.activeProcess.stdin && !session.activeProcess.killed) {
+      try {
+        session.activeProcess.stdin.write((input !== undefined ? input : "") + "\n");
+        return res.json({ success: true });
+      } catch (e: any) {
+        return res.status(500).json({ success: false, error: e.message });
+      }
+    }
+    res.status(400).json({ success: false, message: "No active running process to receive input" });
+  });
+
   // Real-time streaming terminal execution endpoint (Server-Sent Events)
   app.post("/api/terminal/stream", async (req, res) => {
     const { sessionId, command, code, language, shell: reqShell, timeout = 120000 } = req.body || {};

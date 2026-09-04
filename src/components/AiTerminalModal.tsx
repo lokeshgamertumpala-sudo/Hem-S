@@ -169,8 +169,10 @@ export function AiTerminalModal({ isOpen, onClose }: AiTerminalModalProps) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const runningInputRef = useRef<HTMLInputElement>(null);
   const localFileInputRef = useRef<HTMLInputElement>(null);
   const activeStreamControllerRef = useRef<AbortController | null>(null);
+  const [runningInput, setRunningInput] = useState('');
 
   const activeTab = useMemo(() => {
     return tabs.find(t => t.id === activeTabId) || tabs[0] || null;
@@ -666,6 +668,49 @@ export function AiTerminalModal({ isOpen, onClose }: AiTerminalModalProps) {
     }
   };
 
+  // Keyboard handler for sending stdin to active running process
+  const handleRunningInputKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      killCurrentProcess();
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const toSend = runningInput;
+      setRunningInput('');
+
+      if (activeTab) {
+        setTabs(prev => prev.map(t => {
+          if (t.id === activeTab.id) {
+            return {
+              ...t,
+              lines: [
+                ...t.lines,
+                { id: `stdin_${Date.now()}`, type: 'stdout', text: `${toSend}\n` }
+              ]
+            };
+          }
+          return t;
+        }));
+
+        try {
+          await fetch('/api/terminal/input', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: activeTab.id,
+              input: toSend
+            })
+          });
+        } catch (err) {
+          console.error('Failed to send input:', err);
+        }
+      }
+    }
+  };
+
   // Keyboard handler for prompt input
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!activeTab) return;
@@ -1126,14 +1171,26 @@ export function AiTerminalModal({ isOpen, onClose }: AiTerminalModalProps) {
 
                 {/* Input / Running State */}
                 {activeTab.isRunning ? (
-                  <div className="flex items-center gap-2 text-neutral-400 italic text-xs select-none">
-                    <Loader2 size={13} className="animate-spin text-amber-400" />
-                    <span>Executing host command...</span>
+                  <div className="flex-1 flex items-center gap-2">
+                    <Loader2 size={12} className="animate-spin text-amber-400 shrink-0 select-none" />
+                    <input
+                      ref={runningInputRef}
+                      type="text"
+                      value={runningInput}
+                      onChange={(e) => setRunningInput(e.target.value)}
+                      onKeyDown={handleRunningInputKeyDown}
+                      placeholder="Type interactive input (e.g. y/n, answer)... or press Ctrl+C to Stop"
+                      className="flex-1 bg-transparent border-none outline-none text-white font-mono text-[12.5px] p-0 placeholder-neutral-500 caret-emerald-400 selection:bg-[#264f78]"
+                      autoFocus
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
                     <button
                       onClick={killCurrentProcess}
-                      className="px-2 py-0.5 rounded bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 text-[10px] not-italic cursor-pointer"
+                      className="px-2 py-0.5 rounded bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 text-[10px] cursor-pointer shrink-0 select-none"
+                      title="Terminate running process (Ctrl+C)"
                     >
-                      Kill (Ctrl+C)
+                      Stop (Ctrl+C)
                     </button>
                   </div>
                 ) : (
