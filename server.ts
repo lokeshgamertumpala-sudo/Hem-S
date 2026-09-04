@@ -1,6 +1,8 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import os from "os";
+import { exec } from "child_process";
 import { GoogleGenAI } from "@google/genai";
 
 let geminiClient: GoogleGenAI | null = null;
@@ -1348,6 +1350,300 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
     } catch (err: any) {
       res.status(500).json({ error: err?.message || "Search failed" });
     }
+  });
+
+  // AI Autonomous Website Fetcher & Reader Engine
+  async function fetchSiteCleanText(targetUrl: string): Promise<{ title: string; description: string; content: string }> {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(targetUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9"
+        }
+      });
+      clearTimeout(timeout);
+      if (!response.ok) {
+        return { title: targetUrl, description: "", content: `Error fetching site: HTTP ${response.status}` };
+      }
+      const html = await response.text();
+      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      const title = titleMatch ? titleMatch[1].trim() : targetUrl;
+      const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i) ||
+                        html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
+      const description = descMatch ? descMatch[1].trim() : "";
+      let cleanText = html
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+        .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, "")
+        .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, "")
+        .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, "")
+        .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\s+/g, " ")
+        .trim();
+      return { title, description, content: cleanText.slice(0, 10000) };
+    } catch (err: any) {
+      return { title: targetUrl, description: "", content: `Failed to fetch webpage text: ${err?.message || "Unknown error"}` };
+    }
+  }
+
+  // Website Content Fetcher & Reader Endpoint
+  app.all("/api/fetch-site", async (req, res) => {
+    const targetUrl = String(req.query.url || req.body?.url || "").trim();
+    if (!targetUrl || !targetUrl.startsWith("http")) {
+      return res.status(400).json({ error: "Valid HTTP/HTTPS URL required" });
+    }
+    try {
+      const siteData = await fetchSiteCleanText(targetUrl);
+      res.json({
+        success: true,
+        url: targetUrl,
+        title: siteData.title,
+        description: siteData.description,
+        content: siteData.content,
+        length: siteData.content.length
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to fetch website" });
+    }
+  });
+
+  // Website Proxy Engine (Strips X-Frame-Options & CSP to render any site in iframe without errors)
+  app.get("/api/proxy-site", async (req, res) => {
+    const targetUrl = String(req.query.url || "").trim();
+    if (!targetUrl || !targetUrl.startsWith("http")) {
+      return res.status(400).send("Valid HTTP/HTTPS URL required");
+    }
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 9000);
+      const response = await fetch(targetUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        }
+      });
+      clearTimeout(timeout);
+      const contentType = response.headers.get("content-type") || "text/html";
+      res.setHeader("Content-Type", contentType);
+      res.removeHeader("X-Frame-Options");
+      res.removeHeader("Content-Security-Policy");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      const buffer = Buffer.from(await response.arrayBuffer());
+      res.send(buffer);
+    } catch (err: any) {
+      res.status(500).send(`Failed to proxy website: ${err?.message || "Timeout"}`);
+    }
+  });
+
+  // ==========================================
+  // ANTIGRAVITY — AI TERMINAL EXECUTION ENGINE
+  // Rule 18: No fake terminal. Real execution only.
+  // Rule 23: Antigravity Security Guard.
+  // Rule 40: Source of truth = real execution.
+  // ==========================================
+  const DANGEROUS_COMMAND_PATTERNS = [
+    /rm\s+(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-rf|-fr)\s+[\/\\]+/i,
+    /rmdir\s+(\/s\s+\/q|\/q\s+\/s)\s+[a-zA-Z]:[\/\\]?$/i,
+    /del\s+(\/f|\/s|\/q)*\s+[a-zA-Z]:[\/\\]\*?/i,
+    /format\s+[a-zA-Z]:/i,
+    /\bdiskpart\b/i,
+    /\bmkfs\b/i,
+    /\bdd\s+if=.*of=\/dev/i,
+    /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/,
+    /Clear-Disk/i,
+    /Initialize-Disk/i
+  ];
+
+  app.get("/api/terminal/info", (req, res) => {
+    try {
+      const cpus = os.cpus();
+      res.json({
+        cwd: process.cwd(),
+        platform: os.platform(),
+        arch: os.arch(),
+        hostname: os.hostname(),
+        username: os.userInfo().username || "user",
+        nodeVersion: process.version,
+        cpuModel: cpus[0]?.model || "Host CPU",
+        cpuCores: cpus.length,
+        totalMemMb: Math.round(os.totalmem() / (1024 * 1024)),
+        freeMemMb: Math.round(os.freemem() / (1024 * 1024)),
+        uptimeSeconds: Math.floor(os.uptime()),
+        shell: process.platform === "win32" ? "PowerShell" : (process.env.SHELL || "bash")
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/terminal", async (req, res) => {
+    const { command, code, language, cwd: customCwd, timeout = 30000 } = req.body || {};
+    
+    let execCommand = (command || "").trim();
+
+    // If code snippet is passed:
+    if (!execCommand && code) {
+      const lang = (language || "").toLowerCase();
+      if (lang === "python" || lang === "py") {
+        execCommand = `python -c ${JSON.stringify(code)}`;
+      } else if (lang === "javascript" || lang === "js" || lang === "node") {
+        execCommand = `node -e ${JSON.stringify(code)}`;
+      } else {
+        execCommand = code;
+      }
+    }
+
+    if (!execCommand) {
+      return res.status(400).json({ error: "Command or code is required" });
+    }
+
+    // Antigravity Security Guard (Rule 23)
+    for (const pattern of DANGEROUS_COMMAND_PATTERNS) {
+      if (pattern.test(execCommand)) {
+        return res.json({
+          success: false,
+          command: execCommand,
+          stdout: "",
+          stderr: "Antigravity Security Guard: Execution blocked for destructive system command.",
+          exitCode: 126,
+          durationMs: 0,
+          cwd: process.cwd()
+        });
+      }
+    }
+
+    const workingDir = customCwd && fs.existsSync(customCwd) ? customCwd : process.cwd();
+    const startTime = performance.now();
+    const timeoutMs = Math.min(Math.max(Number(timeout) || 30000, 1000), 120000);
+    const execShell = process.platform === "win32" ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
+
+    exec(
+      execCommand,
+      {
+        cwd: workingDir,
+        shell: execShell,
+        timeout: timeoutMs,
+        maxBuffer: 10 * 1024 * 1024 // 10MB output buffer
+      },
+      (error, stdout, stderr) => {
+        const durationMs = Math.round(performance.now() - startTime);
+        const exitCode = error ? (typeof error.code === "number" ? error.code : 1) : 0;
+        const success = exitCode === 0;
+
+        res.json({
+          success,
+          command: execCommand,
+          stdout: stdout || "",
+          stderr: stderr || (error && !stdout ? error.message : ""),
+          exitCode,
+          durationMs,
+          cwd: workingDir,
+          platform: os.platform()
+        });
+      }
+    );
+  });
+
+  // Antigravity AI Command Planner (Deterministic + LLM Fallback)
+  app.post("/api/terminal/plan", async (req, res) => {
+    const { prompt } = req.body || {};
+    const text = String(prompt || "").trim();
+    if (!text) {
+      return res.status(400).json({ error: "Prompt is required" });
+    }
+
+    const isWin = process.platform === "win32";
+
+    // 1. Math / Calculation pattern
+    const mathMatch = text.match(/^(?:calculate|calc|compute|what is|eval)\s+([0-9\.\s\+\-\*\/\^\(\)\%\*\*]+)$/i) ||
+                      text.match(/^([0-9\.\s\+\-\*\/\^\(\)\%\*\*]{3,})$/);
+    if (mathMatch) {
+      const expr = mathMatch[1].trim().replace(/\^/g, "**");
+      return res.json({
+        plan: `Execute mathematical computation "${expr}" in JavaScript runtime`,
+        command: `node -e "console.log(${expr})"`
+      });
+    }
+
+    // 2. System Specs / Diagnostics
+    if (/system\s*(specs|info|details)|specs|hardware|cpu|ram|memory/i.test(text)) {
+      const cmd = isWin 
+        ? `node -e "const os=require('os');console.log(JSON.stringify({os:os.type(),platform:os.platform(),arch:os.arch(),cpus:os.cpus().length,cpuModel:os.cpus()[0]?.model,totalRamMb:Math.round(os.totalmem()/(1024*1024)),freeRamMb:Math.round(os.freemem()/(1024*1024))},null,2))"`
+        : `uname -a && free -h && lscpu | head -n 10`;
+      return res.json({
+        plan: "Query system hardware specifications, CPU cores, and memory capacity",
+        command: cmd
+      });
+    }
+
+    // 3. Git branch and status
+    if (/git\s*status|what branch|current branch|uncommitted|git/i.test(text)) {
+      return res.json({
+        plan: "Inspect current git branch, tracked files, and staging status",
+        command: "git status --short --branch"
+      });
+    }
+
+    // 4. Git log / recent commits
+    if (/git\s*log|recent commits|last commit|commit history/i.test(text)) {
+      return res.json({
+        plan: "Inspect the 5 most recent git commits in the repository",
+        command: "git log -5 --oneline"
+      });
+    }
+
+    // 5. Node & Runtime Versions
+    if (/node\s*version|npm\s*version|python\s*version|runtime versions/i.test(text)) {
+      const cmd = isWin ? "node -v; npm -v; python --version" : "node -v && npm -v && python3 --version";
+      return res.json({
+        plan: "Verify installed Node.js, NPM, and Python runtime versions",
+        command: cmd
+      });
+    }
+
+    // 6. Directory / File listing
+    if (/list\s*(all\s*)?files|show files|directory tree|dir|ls/i.test(text)) {
+      const cmd = isWin ? "Get-ChildItem -Name | Select-Object -First 30" : "ls -la | head -n 30";
+      return res.json({
+        plan: "Inspect filesystem contents in the current working directory",
+        command: cmd
+      });
+    }
+
+    // 7. Disk space
+    if (/disk\s*space|free storage|disk usage/i.test(text)) {
+      const cmd = isWin ? "Get-PSDrive -PSProvider FileSystem" : "df -h";
+      return res.json({
+        plan: "Inspect disk drive storage and available space",
+        command: cmd
+      });
+    }
+
+    // Fallback: If user entered an obvious command directly:
+    if (/^(git|npm|node|npx|python|dir|ls|cat|curl|pwd|echo|Get-|Select-)\b/.test(text)) {
+      return res.json({
+        plan: `Direct command execution: ${text}`,
+        command: text
+      });
+    }
+
+    // Fallback: Default safe terminal command wrapper or direct instruction
+    return res.json({
+      plan: `Execute command for: ${text}`,
+      command: text
+    });
   });
 
   // Dedicated Resilient Image Generation & Proxy Engine

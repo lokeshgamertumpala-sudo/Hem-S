@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, ExternalLink } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
 interface MarkdownRendererProps {
@@ -68,7 +68,28 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }
             );
           },
           p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-          a: ({ children, href }) => <a href={href} className="text-[var(--accent-primary)] hover:underline transition-colors duration-300" target="_blank" rel="noreferrer">{children}</a>,
+          a: ({ children, href }) => {
+            const isWebLink = href && (href.startsWith('http://') || href.startsWith('https://'));
+            const handleClick = (e: React.MouseEvent) => {
+              if (isWebLink) {
+                e.preventDefault();
+                window.dispatchEvent(new CustomEvent('open-site-preview', { detail: { url: href } }));
+              }
+            };
+            return (
+              <a
+                href={href}
+                onClick={handleClick}
+                className="inline-flex items-center gap-1 text-[var(--accent-primary)] hover:underline transition-colors duration-300 font-medium cursor-pointer"
+                target="_blank"
+                rel="noreferrer"
+                title={isWebLink ? `Open & preview ${href}` : undefined}
+              >
+                <span>{children}</span>
+                {isWebLink && <ExternalLink size={11} className="inline opacity-70 shrink-0 ml-0.5" />}
+              </a>
+            );
+          },
           ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1">{children}</ol>,
           h1: ({ children }) => <h1 className={`text-lg font-semibold mb-3 mt-5 transition-colors duration-300 ${isVibe ? "text-[#fdf4ff] [text-shadow:0_0_10px_rgba(236,72,153,0.7)]" : isSwamp ? "text-[var(--text-swamp)]" : "text-[var(--text-primary)]"}`}>{children}</h1>,
