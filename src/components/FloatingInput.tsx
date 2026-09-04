@@ -226,10 +226,10 @@ export function FloatingInput({ onSend, onStop, isStreaming }: FloatingInputProp
         initial={{ y: 24, opacity: 0, scale: 0.97 }}
         animate={{ y: 0, opacity: 1, scale: 1 }}
         transition={{ type: "spring", stiffness: 400, damping: 30 }}
-        className="pointer-events-auto w-full max-w-2xl sm:max-w-3xl rounded-[26px] sm:rounded-[36px] backdrop-blur-3xl border border-white/15 p-1.5 sm:p-2.5 flex items-end gap-1.5 sm:gap-3 transition-all duration-500 relative overflow-hidden apple-liquid-glass shadow-[inset_0_1px_1px_rgba(255,255,255,0.22),0_25px_60px_rgba(0,0,0,0.55)]"
+        className="pointer-events-auto w-full max-w-2xl sm:max-w-3xl rounded-[26px] sm:rounded-[36px] backdrop-blur-3xl border border-white/15 p-1.5 sm:p-2.5 flex items-end gap-1.5 sm:gap-3 transition-all duration-500 relative overflow-visible z-30 apple-liquid-glass shadow-[inset_0_1px_1px_rgba(255,255,255,0.22),0_25px_60px_rgba(0,0,0,0.55)]"
       >
         {/* Specular Liquid Edge Highlight */}
-        <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-white/40 to-transparent opacity-70 pointer-events-none" />
+        <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-white/40 to-transparent opacity-70 pointer-events-none rounded-t-[26px] sm:rounded-t-[36px]" />
         
         {/* Attachment Button */}
         <motion.button 

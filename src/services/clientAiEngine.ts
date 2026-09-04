@@ -9,6 +9,7 @@ export interface ClientStreamParams {
   isSwamp?: boolean;
   isVibe?: boolean;
   isPerformance?: boolean;
+  webSearch?: boolean;
   memories?: string[];
   skills?: any[];
   history?: any[];
@@ -107,6 +108,23 @@ MANDATE: Whenever asked for time/date, use this live clock data.`;
     ? `\n\n[USER MEMORIES & PREFERENCES]\n` + memories.map((m, i) => `${i + 1}. ${m}`).join("\n")
     : "";
 
+  let searchGroundingDirective = "";
+  if (params.webSearch) {
+    const isFile = typeof window !== "undefined" && (window.location.protocol === "file:" || !window.location.origin || window.location.origin === "null");
+    const origin = isFile ? "http://localhost:3000" : "";
+    try {
+      const sres = await fetch(`${origin}/api/search?q=${encodeURIComponent(prompt)}`);
+      if (sres.ok) {
+        const sdata = await sres.json();
+        if (Array.isArray(sdata.results) && sdata.results.length > 0) {
+          searchGroundingDirective = `\n\n[LIVE GOOGLE & REAL-TIME WEB SEARCH GROUNDING]\nThe user requested live web access. The following verified real-time sources were retrieved via Google/Web search for "${prompt}":\n\n` +
+            sdata.results.map((r: any, idx: number) => `[Source ${idx + 1}] ${r.title}\nURL: ${r.link}\nSummary: ${r.snippet}`).join("\n\n") +
+            `\n\nDIRECTIVE: You have active Google and real-time Web access. Ground your response in the verified live data above. Quote current facts, verify claims, and cite the relevant source URLs using markdown links [Source Name](URL).\n`;
+        }
+      }
+    } catch {}
+  }
+
   const modelPromises = models.map(async (modelConfig, index) => {
     const modelId = modelConfig.id;
     const modelName = modelConfig.name || modelId;
@@ -154,10 +172,10 @@ CRITICAL RULES:
     let userPrompt = prompt;
 
     if (isSwamp || (isVibe && models.length > 1)) {
-      systemPrompt = swarmRole.instruction(prompt, modelName) + (isVibe ? `\n\n${VIBE_CODING_PROMPT}` : "") + memoryDirective + skillsDirective + temporalDirective + terminalAndWebCapabilityDirective;
+      systemPrompt = swarmRole.instruction(prompt, modelName) + (isVibe ? `\n\n${VIBE_CODING_PROMPT}` : "") + memoryDirective + skillsDirective + temporalDirective + searchGroundingDirective + terminalAndWebCapabilityDirective;
       userPrompt = prompt;
     } else {
-      systemPrompt = `You are ${modelName}, an elite AI assistant.${isVibe ? "\n\n" + VIBE_CODING_PROMPT : ""}${memoryDirective}${skillsDirective}${temporalDirective}${terminalAndWebCapabilityDirective}`;
+      systemPrompt = `You are ${modelName}, an elite AI assistant.${isVibe ? "\n\n" + VIBE_CODING_PROMPT : ""}${memoryDirective}${skillsDirective}${temporalDirective}${searchGroundingDirective}${terminalAndWebCapabilityDirective}`;
       userPrompt = prompt;
     }
 

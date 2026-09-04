@@ -493,6 +493,7 @@ export function SwarmGrid() {
           isPerformance: isPerformance || isTough,
           memories,
           skills: activeSkills,
+          webSearch: Boolean(webSearch),
           history: [...activeChatMessages, { role: "user", content: prompt, timestamp: Date.now() }],
           signal: controller.signal,
           onChunk: (idx, targetId, content) => {
