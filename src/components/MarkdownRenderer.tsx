@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Check, Copy, ExternalLink } from 'lucide-react';
+import { Check, Copy, ExternalLink, Play, Loader2, Terminal } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
 interface MarkdownRendererProps {
@@ -222,6 +222,51 @@ const GeneratedImage = React.memo(function GeneratedImage({ src, alt }: { src?: 
 
 const CodeBlock = React.memo(function CodeBlock({ code, language }: { code: string; language: string }) {
   const [copied, setCopied] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [execResult, setExecResult] = useState<{ stdout: string; stderr: string; exitCode: number; durationMs: number; command: string } | null>(null);
+
+  const cleanLang = (language || '').toLowerCase().trim();
+  const isCommandLang = ['bash', 'sh', 'shell', 'zsh', 'powershell', 'cmd', 'terminal'].includes(cleanLang);
+  const isScriptLang = ['javascript', 'js', 'typescript', 'ts', 'python', 'py'].includes(cleanLang);
+  const isLikelyCommand = code.trim().startsWith('$') || code.trim().startsWith('npm ') || code.trim().startsWith('npx ') || code.trim().startsWith('git ') || code.trim().startsWith('node ') || code.trim().startsWith('python ') || code.trim().startsWith('claude');
+  const isExecutable = isCommandLang || isScriptLang || isLikelyCommand;
+
+  const handleRun = async () => {
+    if (isRunning) return;
+    setIsRunning(true);
+    try {
+      const rawLines = code.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+      const cmdToRun = rawLines.map(l => l.replace(/^\$\s*/, '')).join('; ');
+
+      const payload = isScriptLang && !isLikelyCommand
+        ? { code, language: cleanLang }
+        : { command: cmdToRun };
+
+      const res = await fetch('/api/terminal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      setExecResult({
+        stdout: data.stdout || '',
+        stderr: data.stderr || '',
+        exitCode: typeof data.exitCode === 'number' ? data.exitCode : (data.success ? 0 : 1),
+        durationMs: data.durationMs || 0,
+        command: data.command || cmdToRun
+      });
+    } catch (err: any) {
+      setExecResult({
+        stdout: '',
+        stderr: err?.message || 'Failed to connect to host terminal',
+        exitCode: 1,
+        durationMs: 0,
+        command: code
+      });
+    } finally {
+      setIsRunning(false);
+    }
+  };
 
   const handleCopy = async () => {
     try {
@@ -266,23 +311,36 @@ const CodeBlock = React.memo(function CodeBlock({ code, language }: { code: stri
             {language}
           </span>
         </div>
-        <button
-          onClick={handleCopy}
-          className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--text-primary)]/10 transition-colors flex items-center gap-1.5 cursor-pointer z-10"
-          title="Copy code"
-        >
-          {copied ? (
-            <>
-              <Check size={13} className="text-emerald-400" />
-              <span className="text-[10px] font-medium text-emerald-400">Copied</span>
-            </>
-          ) : (
-            <>
-              <Copy size={13} />
-              <span className="text-[10px] font-medium">Copy</span>
-            </>
+        <div className="flex items-center gap-1.5">
+          {isExecutable && (
+            <button
+              onClick={handleRun}
+              disabled={isRunning}
+              className="px-2 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-medium flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+              title="Execute this command directly on your host terminal"
+            >
+              {isRunning ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} fill="currentColor" />}
+              <span>{isRunning ? "Running..." : "Run"}</span>
+            </button>
           )}
-        </button>
+          <button
+            onClick={handleCopy}
+            className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--text-primary)]/10 transition-colors flex items-center gap-1.5 cursor-pointer z-10"
+            title="Copy code"
+          >
+            {copied ? (
+              <>
+                <Check size={13} className="text-emerald-400" />
+                <span className="text-[10px] font-medium text-emerald-400">Copied</span>
+              </>
+            ) : (
+              <>
+                <Copy size={13} />
+                <span className="text-[10px] font-medium">Copy</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
       
       {/* High-performance GPU accelerated code block with luminous syntax text glow across all modes */}
@@ -302,6 +360,30 @@ const CodeBlock = React.memo(function CodeBlock({ code, language }: { code: stri
           {code}
         </SyntaxHighlighter>
       </div>
+
+      {/* Inline Live Execution Drawer */}
+      {execResult && (
+        <div className="border-t border-white/10 bg-black/75 p-3 text-[11px] font-mono select-text">
+          <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/10 text-[10px]">
+            <span className="text-emerald-400 font-semibold truncate max-w-[260px] sm:max-w-md">$ {execResult.command}</span>
+            <span className={`px-2 py-0.5 rounded text-[9px] font-semibold flex items-center gap-1 ${
+              execResult.exitCode === 0 ? 'text-emerald-300 bg-emerald-500/15 border border-emerald-500/30' : 'text-rose-300 bg-rose-500/15 border border-rose-500/30'
+            }`}>
+              Exit {execResult.exitCode} ({execResult.durationMs}ms)
+            </span>
+          </div>
+          {execResult.stdout && (
+            <div className="whitespace-pre-wrap text-white/90 max-h-56 overflow-y-auto leading-relaxed selection:bg-emerald-500/30 font-mono text-xs">
+              {execResult.stdout}
+            </div>
+          )}
+          {execResult.stderr && (
+            <div className="whitespace-pre-wrap text-rose-300 pt-1 text-[10.5px] font-mono">
+              {execResult.stderr}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 });
