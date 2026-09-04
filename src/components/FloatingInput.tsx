@@ -28,6 +28,16 @@ export function FloatingInput({ onSend, onStop, isStreaming }: FloatingInputProp
     }
   }, [text]);
 
+  useEffect(() => {
+    const handleCustomPrompt = (e: any) => {
+      if (e.detail?.prompt) {
+        onSend(e.detail.prompt, null, isWebSearch);
+      }
+    };
+    window.addEventListener('send-swarm-prompt', handleCustomPrompt);
+    return () => window.removeEventListener('send-swarm-prompt', handleCustomPrompt);
+  }, [onSend, isWebSearch]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;

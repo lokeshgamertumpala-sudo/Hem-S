@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, Play, Terminal, ExternalLink, RotateCw } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
 interface MarkdownRendererProps {
@@ -68,7 +68,28 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }
             );
           },
           p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-          a: ({ children, href }) => <a href={href} className="text-[var(--accent-primary)] hover:underline transition-colors duration-300" target="_blank" rel="noreferrer">{children}</a>,
+          a: ({ children, href }) => {
+            const isWebLink = href && (href.startsWith('http://') || href.startsWith('https://'));
+            const handleClick = (e: React.MouseEvent) => {
+              if (isWebLink) {
+                e.preventDefault();
+                window.dispatchEvent(new CustomEvent('open-site-preview', { detail: { url: href } }));
+              }
+            };
+            return (
+              <a
+                href={href}
+                onClick={handleClick}
+                className="inline-flex items-center gap-1 text-[var(--accent-primary)] hover:underline transition-colors duration-300 font-medium cursor-pointer"
+                target="_blank"
+                rel="noreferrer"
+                title={isWebLink ? `Open & preview ${href}` : undefined}
+              >
+                <span>{children}</span>
+                {isWebLink && <ExternalLink size={11} className="inline opacity-70 shrink-0 ml-0.5" />}
+              </a>
+            );
+          },
           ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1">{children}</ol>,
           h1: ({ children }) => <h1 className={`text-lg font-semibold mb-3 mt-5 transition-colors duration-300 ${isVibe ? "text-[#fdf4ff] [text-shadow:0_0_10px_rgba(236,72,153,0.7)]" : isSwamp ? "text-[var(--text-swamp)]" : "text-[var(--text-primary)]"}`}>{children}</h1>,
@@ -201,6 +222,14 @@ const GeneratedImage = React.memo(function GeneratedImage({ src, alt }: { src?: 
 
 const CodeBlock = React.memo(function CodeBlock({ code, language }: { code: string; language: string }) {
   const [copied, setCopied] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [terminalResult, setTerminalResult] = useState<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    durationMs: number;
+  } | null>(null);
 
   const handleCopy = async () => {
     try {
@@ -231,6 +260,71 @@ const CodeBlock = React.memo(function CodeBlock({ code, language }: { code: stri
     }
   };
 
+  const handleRunInTerminal = async () => {
+    setIsRunning(true);
+    setShowTerminal(true);
+    const start = Date.now();
+
+    try {
+      const res = await fetch('/api/terminal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          language,
+          timeout: 12000
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setTerminalResult({
+          stdout: data.stdout || '',
+          stderr: data.stderr || '',
+          exitCode: data.exitCode || 0,
+          durationMs: data.durationMs || (Date.now() - start)
+        });
+      } else {
+        throw new Error(`Server status ${res.status}`);
+      }
+    } catch (err: any) {
+      // Client browser sandbox fallback execution
+      let fallbackStdout = '';
+      let fallbackStderr = '';
+      let exitCode = 0;
+
+      const langLower = (language || '').toLowerCase();
+      if (langLower.includes('js') || langLower.includes('javascript') || langLower.includes('node')) {
+        try {
+          const logs: string[] = [];
+          const customConsole = {
+            log: (...args: any[]) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ')),
+            error: (...args: any[]) => logs.push('ERROR: ' + args.join(' ')),
+            warn: (...args: any[]) => logs.push('WARN: ' + args.join(' ')),
+          };
+          const fn = new Function('console', code);
+          fn(customConsole);
+          fallbackStdout = logs.join('\n') || '[Code executed with no output]';
+        } catch (e: any) {
+          fallbackStderr = e.message;
+          exitCode = 1;
+        }
+      } else {
+        fallbackStderr = `${err.message || 'Execution error'}. Note: Native backend execution endpoint unavailable.`;
+        exitCode = 1;
+      }
+
+      setTerminalResult({
+        stdout: fallbackStdout,
+        stderr: fallbackStderr,
+        exitCode,
+        durationMs: Date.now() - start
+      });
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
   return (
     <div className="relative group rounded-2xl overflow-hidden bg-[var(--bg-code)] border border-[var(--glass-border)] my-4 shadow-lg shadow-black/40 transition-colors duration-300 [contain:paint_style]">
       <div className="flex items-center justify-between px-4 py-2 bg-[var(--bg-base)] border-b border-[var(--glass-border)] transition-colors duration-300">
@@ -245,23 +339,42 @@ const CodeBlock = React.memo(function CodeBlock({ code, language }: { code: stri
             {language}
           </span>
         </div>
-        <button
-          onClick={handleCopy}
-          className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--text-primary)]/10 transition-colors flex items-center gap-1.5 cursor-pointer z-10"
-          title="Copy code"
-        >
-          {copied ? (
-            <>
-              <Check size={13} className="text-emerald-400" />
-              <span className="text-[10px] font-medium text-emerald-400">Copied</span>
-            </>
-          ) : (
-            <>
-              <Copy size={13} />
-              <span className="text-[10px] font-medium">Copy</span>
-            </>
-          )}
-        </button>
+
+        <div className="flex items-center gap-1.5">
+          {/* Run in Terminal Button */}
+          <button
+            onClick={handleRunInTerminal}
+            disabled={isRunning}
+            className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono font-medium transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            title="Execute code in terminal"
+          >
+            {isRunning ? (
+              <RotateCw size={11} className="animate-spin text-emerald-400" />
+            ) : (
+              <Play size={11} className="fill-current text-emerald-400" />
+            )}
+            <span>{isRunning ? 'Running...' : 'Run in Terminal'}</span>
+          </button>
+
+          {/* Copy Button */}
+          <button
+            onClick={handleCopy}
+            className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--text-primary)]/10 transition-colors flex items-center gap-1.5 cursor-pointer z-10"
+            title="Copy code"
+          >
+            {copied ? (
+              <>
+                <Check size={13} className="text-emerald-400" />
+                <span className="text-[10px] font-medium text-emerald-400">Copied</span>
+              </>
+            ) : (
+              <>
+                <Copy size={13} />
+                <span className="text-[10px] font-medium">Copy</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
       
       {/* High-performance GPU accelerated code block with luminous syntax text glow across all modes */}
@@ -281,6 +394,56 @@ const CodeBlock = React.memo(function CodeBlock({ code, language }: { code: stri
           {code}
         </SyntaxHighlighter>
       </div>
+
+      {/* Integrated Terminal Execution Drawer */}
+      {showTerminal && (
+        <div className="border-t border-white/10 bg-[#0c0c0e] p-3 text-xs font-mono">
+          <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-white/5 text-[11px] text-[var(--text-muted)]">
+            <div className="flex items-center gap-2">
+              <Terminal size={12} className="text-emerald-400" />
+              <span className="text-white font-medium">Terminal Execution Output</span>
+              {terminalResult && (
+                <span className={`text-[9px] px-1.5 py-0.2 rounded ${terminalResult.exitCode === 0 ? 'bg-emerald-950 text-emerald-400' : 'bg-red-950 text-red-400'}`}>
+                  exit {terminalResult.exitCode} ({terminalResult.durationMs}ms)
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setShowTerminal(false)}
+              className="text-[10px] text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
+            >
+              Close Output ✕
+            </button>
+          </div>
+
+          {isRunning && (
+            <div className="flex items-center gap-2 text-emerald-400 py-1 animate-pulse text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span>Executing in terminal sandbox...</span>
+            </div>
+          )}
+
+          {terminalResult && !isRunning && (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {terminalResult.stdout && (
+                <pre className="text-emerald-300/90 whitespace-pre-wrap break-all pl-2 border-l border-emerald-500/30">
+                  {terminalResult.stdout}
+                </pre>
+              )}
+              {terminalResult.stderr && (
+                <pre className="text-red-400/90 whitespace-pre-wrap break-all pl-2 border-l border-red-500/30">
+                  {terminalResult.stderr}
+                </pre>
+              )}
+              {!terminalResult.stdout && !terminalResult.stderr && (
+                <span className="text-[var(--text-muted)] italic">
+                  [Program finished with no console output (Exit code {terminalResult.exitCode})]
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 });

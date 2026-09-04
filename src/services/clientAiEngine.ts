@@ -132,14 +132,17 @@ MANDATE: Whenever asked for time/date, use this live clock data.`;
       ? `\n\n[ACTIVE SPECIALIZED SKILLS]\n` + relevantSkills.map(s => `• [${s.name || "Skill"}]: ${s.systemPrompt || s.description || ""}`).join("\n")
       : "";
 
+    const terminalAndWebCapabilityDirective = `\n\n[CAPABILITIES: TERMINAL & WEB ACCESS]\nYou have dedicated interactive terminal execution power and live web browsing. Provide working markdown links [Title](URL) and executable code/commands.`;
+
     let systemPrompt = "";
     let userPrompt = prompt;
 
     if (isSwamp || (isVibe && models.length > 1)) {
-      systemPrompt = swarmRole.instruction(prompt, modelName) + (isVibe ? `\n\n${VIBE_CODING_PROMPT}` : "") + memoryDirective + skillsDirective + temporalDirective;
-      userPrompt = `TASK SPECIFICATION: ${prompt}\nExecute role (${swarmRole.roleName}) with complete code.`;
+      systemPrompt = swarmRole.instruction(prompt, modelName) + (isVibe ? `\n\n${VIBE_CODING_PROMPT}` : "") + memoryDirective + skillsDirective + temporalDirective + terminalAndWebCapabilityDirective;
+      userPrompt = prompt;
     } else {
-      systemPrompt = `You are ${modelName}, an elite AI assistant.${isVibe ? "\n\n" + VIBE_CODING_PROMPT : ""}${memoryDirective}${skillsDirective}${temporalDirective}`;
+      systemPrompt = `You are ${modelName}, an elite AI assistant.${isVibe ? "\n\n" + VIBE_CODING_PROMPT : ""}${memoryDirective}${skillsDirective}${temporalDirective}${terminalAndWebCapabilityDirective}`;
+      userPrompt = prompt;
     }
 
     const keyToUse = apiKeys[targetSlotIndex % apiKeys.length] || apiKeys[0];

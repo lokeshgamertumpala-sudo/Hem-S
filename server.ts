@@ -1,6 +1,8 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import os from "os";
+import { exec } from "child_process";
 import { GoogleGenAI } from "@google/genai";
 
 let geminiClient: GoogleGenAI | null = null;
@@ -849,7 +851,11 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
         userPromptContent = prompt;
       }
 
-      specializedSystemPrompt += temporalDirective + searchGroundingDirective;
+      const terminalAndWebCapabilityDirective = `\n\n[ACTIVE CAPABILITIES: LIVE TERMINAL & WEB ACCESS]
+• Real-Time Web Search & Browsing: You have active live web access. When providing information or citing sources, provide working links [Source Title](URL). The user can click any link to preview or read the webpage instantly without errors.
+• Integrated Terminal Execution: You have dedicated interactive terminal execution power. Whenever you provide shell commands or code (Node.js, Python, Bash), users can run it directly in your terminal with 1-click. When relevant, write clean executable commands and code.`;
+
+      specializedSystemPrompt += temporalDirective + searchGroundingDirective + terminalAndWebCapabilityDirective;
 
       // Helper to write chunk
       const writeChunk = (content: string) => {
@@ -1576,6 +1582,206 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
       return res.status(500).json({ error: e.message });
     }
     res.status(400).json({ error: "Invalid memories array" });
+  });
+
+  // AI & User Terminal Execution Engine: runs real commands & scripts with safety timeout
+  app.post("/api/terminal", async (req, res) => {
+    const { command, language, code, cwd, timeout = 12000 } = req.body;
+    const startTime = Date.now();
+    let cmdToRun = (command || "").trim();
+
+    if (!cmdToRun && code) {
+      const lang = (language || "").toLowerCase();
+      if (lang === "javascript" || lang === "js" || lang === "node" || lang === "typescript" || lang === "ts") {
+        const tmpFile = path.join(os.tmpdir(), `hems_run_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.mjs`);
+        try {
+          fs.writeFileSync(tmpFile, code, "utf8");
+          cmdToRun = `node "${tmpFile}"`;
+        } catch (e: any) {
+          return res.json({ success: false, stdout: "", stderr: e.message, exitCode: 1, durationMs: Date.now() - startTime });
+        }
+      } else if (lang === "python" || lang === "py") {
+        const tmpFile = path.join(os.tmpdir(), `hems_run_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.py`);
+        try {
+          fs.writeFileSync(tmpFile, code, "utf8");
+          const pythonCmd = process.platform === "win32" ? "python" : "python3";
+          cmdToRun = `${pythonCmd} "${tmpFile}"`;
+        } catch (e: any) {
+          return res.json({ success: false, stdout: "", stderr: e.message, exitCode: 1, durationMs: Date.now() - startTime });
+        }
+      } else if (lang === "sh" || lang === "bash" || lang === "shell") {
+        cmdToRun = code;
+      } else {
+        cmdToRun = code;
+      }
+    }
+
+    if (!cmdToRun) {
+      return res.status(400).json({ error: "Missing command or code to execute" });
+    }
+
+    try {
+      exec(
+        cmdToRun,
+        {
+          timeout: Math.min(timeout, 30000),
+          maxBuffer: 1024 * 1024 * 4,
+          cwd: cwd || process.cwd(),
+          env: { ...process.env, FORCE_COLOR: "0" }
+        },
+        (error, stdout, stderr) => {
+          const durationMs = Date.now() - startTime;
+          const exitCode = error ? (typeof (error as any).code === "number" ? (error as any).code : 1) : 0;
+          res.json({
+            success: !error,
+            stdout: stdout || "",
+            stderr: stderr || (error && !stdout ? error.message : ""),
+            exitCode,
+            durationMs,
+            command: cmdToRun
+          });
+        }
+      );
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        stdout: "",
+        stderr: err?.message || "Execution failed",
+        exitCode: 1,
+        durationMs: Date.now() - startTime
+      });
+    }
+  });
+
+  // Dedicated Web Search API Endpoint
+  app.all("/api/search", async (req, res) => {
+    try {
+      const rawQuery = String(req.query.q || req.body?.q || req.body?.query || "").trim();
+      if (!rawQuery) {
+        return res.status(400).json({ error: "Query parameter 'q' is required" });
+      }
+      const maxResults = parseInt(String(req.query.max || req.body?.max || 5), 10) || 5;
+      const results = await searchGoogleWeb(rawQuery, maxResults);
+      res.json({ query: rawQuery, results, count: results.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Search failed", results: [] });
+    }
+  });
+
+  // Website Content Fetcher & Reader Engine (Clean text & structure for AI & reader view)
+  app.all("/api/fetch-site", async (req, res) => {
+    const targetUrl = String(req.query.url || req.body?.url || "").trim();
+    if (!targetUrl || !targetUrl.startsWith("http")) {
+      return res.status(400).json({ error: "Valid HTTP/HTTPS URL required" });
+    }
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 9000);
+      const response = await fetch(targetUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9"
+        }
+      });
+      clearTimeout(timeout);
+      if (!response.ok) {
+        return res.status(response.status).json({ error: `Website returned status ${response.status}`, status: response.status });
+      }
+      const html = await response.text();
+      
+      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      const title = titleMatch ? titleMatch[1].trim() : targetUrl;
+
+      const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i) ||
+                        html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
+      const description = descMatch ? descMatch[1].trim() : "";
+
+      let cleanText = html
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+        .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, "")
+        .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, "")
+        .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, "")
+        .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (cleanText.length > 12000) {
+        cleanText = cleanText.slice(0, 12000) + "... [content truncated]";
+      }
+
+      res.json({
+        success: true,
+        url: targetUrl,
+        title,
+        description,
+        content: cleanText,
+        length: cleanText.length
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to fetch website" });
+    }
+  });
+
+  // Website Proxy Engine (Strips X-Frame-Options & CSP to render any site in iframe without errors)
+  app.get("/api/proxy-site", async (req, res) => {
+    const targetUrl = String(req.query.url || "").trim();
+    if (!targetUrl || !targetUrl.startsWith("http")) {
+      return res.status(400).send("Valid HTTP/HTTPS URL required");
+    }
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 9000);
+      const response = await fetch(targetUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        }
+      });
+      clearTimeout(timeout);
+      if (!response.ok) {
+        return res.status(response.status).send(`Failed to proxy website (${response.status})`);
+      }
+
+      const contentType = response.headers.get("content-type") || "text/html";
+      if (!contentType.includes("html")) {
+        res.setHeader("Content-Type", contentType);
+        const buffer = Buffer.from(await response.arrayBuffer());
+        return res.send(buffer);
+      }
+
+      let html = await response.text();
+      const parsedUrl = new URL(targetUrl);
+      const baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
+
+      if (html.includes("<head>")) {
+        html = html.replace("<head>", `<head><base href="${baseUrl}/">`);
+      } else if (html.includes("<head ")) {
+        html = html.replace(/<head[^>]*>/, `$&<base href="${baseUrl}/">`);
+      } else {
+        html = `<base href="${baseUrl}/">\n` + html;
+      }
+
+      html = html.replace(/if\s*\(\s*top\s*!==\s*self\s*\)/gi, "if(false)");
+      html = html.replace(/if\s*\(\s*window\.top\s*!==\s*window\.self\s*\)/gi, "if(false)");
+
+      res.removeHeader("X-Frame-Options");
+      res.removeHeader("Content-Security-Policy");
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("X-Frame-Options", "ALLOWALL");
+      res.send(html);
+    } catch (err: any) {
+      res.status(500).send(`Proxy failed: ${err?.message || "Unknown error"}`);
+    }
   });
 
   if (!isServerless) {

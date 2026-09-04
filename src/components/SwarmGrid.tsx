@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { BotMessageSquare, AlertCircle, Trash2, RotateCcw, ChevronDown, ChevronUp, Cpu, Play, Brain, Sparkles } from "lucide-react";
+import { BotMessageSquare, AlertCircle, Trash2, RotateCcw, ChevronDown, ChevronUp, Cpu, Play, Brain, Sparkles, Terminal } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useApiKeys } from "../context/ApiKeyContext";
 import { useModels, AIModel, SWAMP_MODELS } from "../context/ModelContext";
@@ -10,6 +10,7 @@ import { useMemory } from "../context/MemoryContext";
 import { FloatingInput } from "./FloatingInput";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { VibeCodingEngine } from "./VibeCodingEngine";
+import { AiTerminal } from "./AiTerminal";
 import { useTheme } from "../context/ThemeContext";
 import { useSkills } from "../context/SkillContext";
 import { executeClientSwarm } from "../services/clientAiEngine";
@@ -1231,6 +1232,14 @@ const ModelCardColumn = React.memo(function ModelCardColumn({
   const isTurnLatest = !model.turns || displayTurnIndex >= model.turns.length - 1;
   const isTurnComputing = isTurnLatest && model.status === "computing";
   const isTruncated = !isTurnComputing && checkIsTruncated(currentText);
+  const [showTerminal, setShowTerminal] = useState(false);
+
+  // Auto-extract any generated code snippet for 1-click terminal execution
+  const extractedCode = useMemo(() => {
+    if (!currentText) return undefined;
+    const match = currentText.match(/```(?:[a-zA-Z0-9_-]*)\n([\s\S]*?)```/);
+    return match ? match[1].trim() : undefined;
+  }, [currentText]);
 
   return (
     <motion.div
@@ -1269,6 +1278,22 @@ const ModelCardColumn = React.memo(function ModelCardColumn({
           </div>
           <p className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-wider transition-colors duration-300 truncate">{model.role}</p>
         </div>
+
+        {/* Dedicated Terminal Power Button for every AI Model */}
+        <motion.button 
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setShowTerminal(!showTerminal)}
+          title={`Open interactive Terminal for ${model.name}`}
+          className={`p-1.5 rounded-lg transition-all shrink-0 cursor-pointer flex items-center gap-1 font-mono text-[10px] ${
+            showTerminal 
+              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.3)]" 
+              : "text-[var(--text-muted)] hover:text-white hover:bg-white/10"
+          }`}
+        >
+          <Terminal size={13} className={showTerminal ? "text-emerald-400" : ""} />
+          <span className="hidden sm:inline font-bold">Term</span>
+        </motion.button>
+
         {currentText && (
           <motion.button 
             whileTap={{ scale: 0.9 }}
@@ -1287,6 +1312,18 @@ const ModelCardColumn = React.memo(function ModelCardColumn({
             : "bg-[var(--text-muted)] opacity-30"
         }`} />
       </div>
+
+      {/* Interactive AI Terminal for this Model */}
+      <AiTerminal
+        modelName={model.name}
+        modelRole={model.role}
+        codeSnippet={extractedCode}
+        isOpen={showTerminal}
+        onClose={() => setShowTerminal(false)}
+        onExecutePrompt={(promptText) => {
+          window.dispatchEvent(new CustomEvent('send-swarm-prompt', { detail: { prompt: promptText } }));
+        }}
+      />
 
       {/* Response Area: Left-Aligned Clean Markdown Output */}
       <div className="flex-1 w-full text-left min-h-[400px]">
