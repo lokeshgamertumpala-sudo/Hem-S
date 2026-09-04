@@ -29,6 +29,20 @@ function detectRepetitionLoop(text: string): boolean {
   return false;
 }
 
+// Antigravity Security Guard Patterns (Rule 23)
+const DANGEROUS_COMMAND_PATTERNS = [
+  /rm\s+(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-rf|-fr)\s+[\/\\]+/i,
+  /rmdir\s+(\/s\s+\/q|\/q\s+\/s)\s+[a-zA-Z]:[\/\\]?$/i,
+  /del\s+(\/f|\/s|\/q)*\s+[a-zA-Z]:[\/\\]\*?/i,
+  /format\s+[a-zA-Z]:/i,
+  /\bdiskpart\b/i,
+  /\bmkfs\b/i,
+  /\bdd\s+if=.*of=\/dev/i,
+  /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/,
+  /Clear-Disk/i,
+  /Initialize-Disk/i
+];
+
 // Live Real-Time Multi-Provider Web Search Engine
 interface SearchResult {
   title: string;
@@ -740,6 +754,98 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
       }
     }
 
+    // Antigravity Real Host Terminal Execution Grounding (Rule 18, Rule 40: Source of Truth = Real Execution)
+    let terminalGroundingDirective = "";
+    const isGitQuery = /\b(git\s*(status|branch|log|diff|commit|remote|repo|head)|what\s*(is\s*)?(my\s*|the\s*)?branch|current\s*branch|last\s*commit|recent\s*commit|uncommitted|working\s*tree)\b/i.test(prompt);
+    const isSystemSpecsQuery = /\b(system\s*(specs|info|details)|hardware|cpu\s*(cores|model)|available\s*ram|memory\s*usage|os\s*version|disk\s*space|storage\s*space)\b/i.test(prompt);
+    const isRuntimeVersionQuery = /\b(node(\.js)?\s*version|npm\s*version|python\s*version|runtime\s*versions)\b/i.test(prompt);
+    const isFileInspectionQuery = /\b(list\s*(all\s*)?files|show\s*files|files\s*in\s*|directory\s*tree|dir\b|ls\b)\b/i.test(prompt) && !prompt.includes("http");
+    const isMathQuery = /^(?:calculate|calc|compute|what\s+is|eval)\s+([0-9\.\s\+\-\*\/\^\(\)\%\*\*]+)$/i.test(prompt) || /^([0-9\.\s\+\-\*\/\^\(\)\%\*\*]{3,})$/.test(prompt.trim());
+    const isExplicitCommand = /^\s*(\$|powershell|bash|sh|cmd)\s+(.+)/i.test(prompt) || /^\s*(git|npm|node|npx|python|dir|ls|cat|curl|pwd|echo)\s+/i.test(prompt);
+
+    let terminalCmdToRun = "";
+    let terminalReason = "";
+
+    if (isExplicitCommand) {
+      const match = prompt.match(/^\s*(?:\$|powershell|bash|sh|cmd)?\s*(.+)/i);
+      terminalCmdToRun = match ? match[1].trim() : prompt.trim();
+      terminalReason = "Direct terminal command requested by user";
+    } else if (isGitQuery) {
+      terminalCmdToRun = "git status --short --branch && git log -3 --oneline";
+      terminalReason = "Inspect live Git repository branch status and recent commits";
+    } else if (isSystemSpecsQuery) {
+      terminalCmdToRun = process.platform === "win32"
+        ? `node -e "const os=require('os');console.log(JSON.stringify({os:os.type(),platform:os.platform(),arch:os.arch(),cpus:os.cpus().length,cpuModel:os.cpus()[0]?.model,totalRamMb:Math.round(os.totalmem()/(1024*1024)),freeRamMb:Math.round(os.freemem()/(1024*1024))},null,2))"`
+        : `uname -a && free -h && lscpu | head -n 10`;
+      terminalReason = "Inspect host machine hardware specifications, CPU cores, and memory capacity";
+    } else if (isRuntimeVersionQuery) {
+      terminalCmdToRun = process.platform === "win32"
+        ? "node -v; npm -v; python --version"
+        : "node -v && npm -v && python3 --version";
+      terminalReason = "Inspect host runtime versions for Node, NPM, and Python";
+    } else if (isFileInspectionQuery) {
+      terminalCmdToRun = process.platform === "win32"
+        ? "Get-ChildItem -Name | Select-Object -First 30"
+        : "ls -la | head -n 30";
+      terminalReason = "Inspect filesystem files in the active project directory";
+    } else if (isMathQuery) {
+      const exprMatch = prompt.match(/^(?:calculate|calc|compute|what\s+is|eval)?\s*([0-9\.\s\+\-\*\/\^\(\)\%\*\*]+)$/i);
+      const expr = (exprMatch ? exprMatch[1] : prompt).trim().replace(/\^/g, "**");
+      terminalCmdToRun = `node -e "console.log(${expr})"`;
+      terminalReason = "Perform exact mathematical computation in Node.js runtime";
+    }
+
+    if (terminalCmdToRun && !isContinuationReq) {
+      try {
+        const isDangerous = DANGEROUS_COMMAND_PATTERNS.some(p => p.test(terminalCmdToRun));
+        if (!isDangerous) {
+          const startTime = performance.now();
+          const execShell = process.platform === "win32" ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
+          const cmdToExec = process.platform === "win32" ? terminalCmdToRun.replace(/\s*&&\s*/g, "; ") : terminalCmdToRun;
+          const execResult = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {
+            exec(
+              cmdToExec,
+              {
+                cwd: process.cwd(),
+                shell: execShell,
+                timeout: 12000,
+                maxBuffer: 5 * 1024 * 1024
+              },
+              (err, stdout, stderr) => {
+                const exitCode = err ? (typeof err.code === "number" ? err.code : 1) : 0;
+                resolve({ stdout: stdout || "", stderr: stderr || "", exitCode });
+              }
+            );
+          });
+          const durationMs = Math.round(performance.now() - startTime);
+
+          terminalGroundingDirective = `\n\n[ANTIGRAVITY REAL HOST EXECUTION RESULT - RULE 40: SOURCE OF TRUTH]
+Reason: ${terminalReason}
+Executed Command: $ ${terminalCmdToRun}
+Exit Status: Exit ${execResult.exitCode} (${durationMs}ms)
+Working Directory: ${process.cwd()}
+Host Execution Standard Output:
+${execResult.stdout.trim() || "(no stdout)"}
+${execResult.stderr.trim() ? `Standard Error:\n${execResult.stderr.trim()}` : ""}
+
+CRITICAL DIRECTIVE FOR ALL MODELS:
+1. You HAVE real host execution access. The command above was ALREADY executed live on the user's host machine before generating this response.
+2. NEVER say "I don't have access to your local machine", "I cannot run commands", or "I don't have access to your Git repository".
+3. Ground your response 100% in the real output provided above.
+4. Format your response cleanly:
+   - Present the command and exit status in a code block:
+\`\`\`bash
+$ ${terminalCmdToRun}
+# Exit ${execResult.exitCode} (${durationMs}ms)
+${execResult.stdout.trim().slice(0, 800)}
+\`\`\`
+   - Then state the verified answer clearly (e.g., current branch name, commit message, computed result, or file list).`;
+        }
+      } catch (execErr) {
+        console.error("Host terminal grounding execution error:", execErr);
+      }
+    }
+
     // Collect available API keys from request or server environment
     const collectedKeys: string[] = [];
 
@@ -851,7 +957,10 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
         userPromptContent = prompt;
       }
 
-      specializedSystemPrompt += temporalDirective + searchGroundingDirective;
+      specializedSystemPrompt += temporalDirective + searchGroundingDirective + terminalGroundingDirective;
+      if (terminalGroundingDirective) {
+        userPromptContent = `${prompt}\n\n${terminalGroundingDirective}`;
+      }
 
       // Helper to write chunk
       const writeChunk = (content: string) => {
@@ -1453,18 +1562,6 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
   // Rule 23: Antigravity Security Guard.
   // Rule 40: Source of truth = real execution.
   // ==========================================
-  const DANGEROUS_COMMAND_PATTERNS = [
-    /rm\s+(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-rf|-fr)\s+[\/\\]+/i,
-    /rmdir\s+(\/s\s+\/q|\/q\s+\/s)\s+[a-zA-Z]:[\/\\]?$/i,
-    /del\s+(\/f|\/s|\/q)*\s+[a-zA-Z]:[\/\\]\*?/i,
-    /format\s+[a-zA-Z]:/i,
-    /\bdiskpart\b/i,
-    /\bmkfs\b/i,
-    /\bdd\s+if=.*of=\/dev/i,
-    /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/,
-    /Clear-Disk/i,
-    /Initialize-Disk/i
-  ];
 
   app.get("/api/terminal/info", (req, res) => {
     try {
@@ -1528,9 +1625,10 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
     const startTime = performance.now();
     const timeoutMs = Math.min(Math.max(Number(timeout) || 30000, 1000), 120000);
     const execShell = process.platform === "win32" ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
+    const cmdToExec = process.platform === "win32" ? execCommand.replace(/\s*&&\s*/g, "; ") : execCommand;
 
     exec(
-      execCommand,
+      cmdToExec,
       {
         cwd: workingDir,
         shell: execShell,
