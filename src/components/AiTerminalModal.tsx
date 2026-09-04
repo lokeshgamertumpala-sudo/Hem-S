@@ -897,6 +897,7 @@ export function AiTerminalModal({ isOpen, onClose }: AiTerminalModalProps) {
   if (!isOpen) return null;
 
   const quickActions = [
+    { label: '🤖 Claude Code', cmd: 'claude' },
     { label: 'git status', cmd: 'git status --short --branch' },
     { label: 'dir / ls', cmd: hostInfo?.platform === 'win32' ? 'dir' : 'ls -la' },
     { label: 'node -v', cmd: 'node -v' },
@@ -1018,6 +1019,17 @@ export function AiTerminalModal({ isOpen, onClose }: AiTerminalModalProps) {
                     >
                       <Sparkles size={13} className="text-purple-400" />
                       <span>AI Copilot Terminal</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        const tabId = createTab(undefined, 'claude');
+                        setShowShellMenu(false);
+                        setTimeout(() => executeCommand('claude'), 120);
+                      }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex items-center gap-2 cursor-pointer border-t border-[#333333]"
+                    >
+                      <Sparkles size={13} className="text-amber-400" />
+                      <span>Claude Code Agent</span>
                     </button>
                   </div>
                 )}
