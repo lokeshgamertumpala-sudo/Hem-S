@@ -959,26 +959,23 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
         userPromptContent = prompt;
       }
 
-      const terminalAndWebCapabilityDirective = `\n\n[AUTONOMOUS TERMINAL POWER — RUN COMMANDS DIRECTLY LIKE AN AGENT]
+      const terminalAndWebCapabilityDirective = `\n\n[AUTONOMOUS TERMINAL POWER — RUN COMMANDS DIRECTLY ON HOST]
 You are equipped with direct real-time terminal and shell execution power on the host operating system, exactly like an autonomous AI coding assistant.
-When you need to:
-• Run shell commands (e.g. bash, cmd, powershell, git, npm, node, python)
-• Test code, run scripts, or evaluate algorithms
-• Inspect project files, directory contents, or check system configurations
-• Verify answers, run tests, or debug code
-Execute the command directly using the <terminal> tool tag:
-<terminal>
+When asked to check system info, run commands, test code, or inspect files, execute the command directly using:
+<terminal>command to run</terminal>
+Or inside a shell code block:
+\`\`\`bash
 command to run
-</terminal>
-
-The system will immediately pause generation, execute your command in the real terminal, capture live stdout and stderr, and return the execution results wrapped in <terminal_result command="..." exit_code="...">output</terminal_result> so you can inspect the output and give the user the verified, direct answer!
+\`\`\`
+The host terminal will immediately execute the command, capture real stdout and stderr, and display the live output to the user.
+CRITICAL RULES:
+- ALWAYS answer directly and concisely without robotic filler.
+- NEVER invent, simulate, or output fake <terminal_result> tags yourself. Only emit the command you wish to execute.
+- Keep commands clean and direct.
 
 [LIVE REAL-TIME WEB SEARCH & SITE INSPECTION TOOLS]
 • Search the web: <web_search>search query</web_search>
-• Read webpage text: <fetch_site>https://example.com</fetch_site>
-The system will retrieve the live data and return it to you immediately.
-
-Answer directly and concisely. When running a command, run it via <terminal>command</terminal> and then explain the verified result directly.`;
+• Read webpage text: <fetch_site>https://example.com</fetch_site>`;
 
       specializedSystemPrompt += temporalDirective + searchGroundingDirective + terminalAndWebCapabilityDirective;
 

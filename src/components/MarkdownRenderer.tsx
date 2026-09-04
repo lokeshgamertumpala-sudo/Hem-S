@@ -18,23 +18,39 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }
     let text = content || "";
     if (!text) return "";
 
-    // 1. Transform completed terminal results into custom code fences:
+    // 1. If <terminal>cmd</terminal> is immediately followed by a <terminal_result>, strip the redundant <terminal> block
     text = text.replace(
-      /<terminal_result\s+command=["']([^"']*)["']\s+exit_code=["']([^"']*)["'](?:\s+duration_ms=["']([^"']*)["'])?>([\s\S]*?)<\/terminal_result>/gi,
-      (_m, cmd, exitCode, dur, output) => {
-        return `\n\`\`\`ai-terminal-result\n__CMD__:${cmd}\n__EXIT__:${exitCode}\n__DUR__:${dur || "0"}\n${output.trim()}\n\`\`\`\n`;
+      /<terminal>[\s\S]*?<\/terminal>\s*(?=<terminal_result)/gi,
+      ''
+    );
+
+    // 2. Transform any <terminal_result> (with any attributes) into custom code fences:
+    text = text.replace(
+      /<terminal_result([\s\S]*?)>([\s\S]*?)<\/terminal_result>/gi,
+      (_match, attrs, output) => {
+        const cmdMatch = attrs.match(/command=["']([^"']*)["']/i);
+        const exitMatch = attrs.match(/exit_code=["']([^"']*)["']/i);
+        const durMatch = attrs.match(/duration(?:_ms)?=["']([^"']*)["']/i);
+        const cmd = cmdMatch ? cmdMatch[1] : "terminal command";
+        const exitCode = exitMatch ? exitMatch[1] : "0";
+        const dur = durMatch ? durMatch[1].replace("ms", "") : "0";
+        return `\n\`\`\`ai-terminal-result\n__CMD__:${cmd}\n__EXIT__:${exitCode}\n__DUR__:${dur}\n${output.trim()}\n\`\`\`\n`;
       }
     );
 
-    // 2. Transform in-flight/standalone <terminal> commands into custom code fences:
+    // 3. Transform in-flight or standalone <terminal> commands into auto-executing terminal cards:
     text = text.replace(
       /<terminal>([\s\S]*?)<\/terminal>/gi,
-      (_m, cmd) => {
-        return `\n\`\`\`ai-terminal-exec\n__CMD__:${encodeURIComponent(cmd.trim())}\n\`\`\`\n`;
+      (_match, cmd) => {
+        const cleanCmd = cmd.trim().replace(/^[`"']|[`"']$/g, '');
+        return `\n\`\`\`ai-terminal-exec\n__CMD__:${encodeURIComponent(cleanCmd)}\n\`\`\`\n`;
       }
     );
 
-    // 3. Transform web search results:
+    // 4. Strip any stray or dangling <terminal> or <terminal_result> tags so raw XML NEVER leaks
+    text = text.replace(/<\/?terminal(?:_result)?[^>]*>/gi, '');
+
+    // 5. Transform web search results:
     text = text.replace(
       /<web_search_result\s+query=["']([^"']*)["']>([\s\S]*?)<\/web_search_result>/gi,
       (_m, query, results) => {
@@ -42,7 +58,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }
       }
     );
 
-    // 4. Transform site fetch results:
+    // 6. Transform site fetch results:
     text = text.replace(
       /<fetch_site_result\s+url=["']([^"']*)["'](?:\s+title=["']([^"']*)["'])?>([\s\S]*?)<\/fetch_site_result>/gi,
       (_m, url, title, body) => {
@@ -50,7 +66,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }
       }
     );
 
-    // 5. Normalize duplicate adjoining code fence seams from multi-pass continuations
+    // 7. Normalize duplicate adjoining code fence seams from multi-pass continuations
     text = text.replace(/```\s*\n\s*```[a-zA-Z0-9_-]*\s*\n/g, '\n');
 
     // 6. Fix broken markdown image syntax where models insert newlines or spaces:
@@ -310,7 +326,9 @@ const CodeBlock = React.memo(function CodeBlock({ code, language }: { code: stri
     const start = Date.now();
 
     try {
-      const res = await fetch('/api/terminal', {
+      const isFile = typeof window !== "undefined" && (window.location.protocol === "file:" || !window.location.origin || window.location.origin === "null");
+      const origin = isFile ? "http://localhost:3000" : "";
+      const res = await fetch(`${origin}/api/terminal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -368,6 +386,20 @@ const CodeBlock = React.memo(function CodeBlock({ code, language }: { code: stri
       setIsRunning(false);
     }
   };
+
+  useEffect(() => {
+    const lang = (language || "").toLowerCase();
+    const isExplicitTerminal = lang === "terminal" || lang === "console";
+    const isSafeInspection = (lang === "bash" || lang === "sh" || lang === "shell") &&
+      code.trim().length > 0 &&
+      code.trim().length < 160 &&
+      /^(?:node|python|python3|npm|git|uname|whoami|date|hostname|echo|ls|dir)\b/i.test(code.trim()) &&
+      !/(?:rm|del|drop|delete|shutdown|reboot|mkfs|format)\b/i.test(code);
+
+    if ((isExplicitTerminal || isSafeInspection) && !showTerminal && !terminalResult && !isRunning) {
+      handleRunInTerminal();
+    }
+  }, []);
 
   return (
     <div className="relative group rounded-2xl overflow-hidden bg-[var(--bg-code)] border border-[var(--glass-border)] my-4 shadow-lg shadow-black/40 transition-colors duration-300 [contain:paint_style]">
@@ -536,7 +568,9 @@ const AiTerminalResultCard = React.memo(function AiTerminalResultCard({ rawConte
     setIsReRunning(true);
     const start = Date.now();
     try {
-      const res = await fetch("/api/terminal", {
+      const isFile = typeof window !== "undefined" && (window.location.protocol === "file:" || !window.location.origin || window.location.origin === "null");
+      const origin = isFile ? "http://localhost:3000" : "";
+      const res = await fetch(`${origin}/api/terminal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ command: currentResult.cmd })
@@ -655,21 +689,162 @@ const AiTerminalExecCard = React.memo(function AiTerminalExecCard({ rawContent }
     }
   }
 
+  const [status, setStatus] = useState<"running" | "done">("running");
+  const [result, setResult] = useState<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    durationMs: number;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [isReRunning, setIsReRunning] = useState(false);
+
+  const executeCommand = async (commandToRun: string) => {
+    if (!commandToRun) return;
+    setStatus("running");
+    const start = Date.now();
+    try {
+      const isFile = typeof window !== "undefined" && (window.location.protocol === "file:" || !window.location.origin || window.location.origin === "null");
+      const origin = isFile ? "http://localhost:3000" : "";
+      const res = await fetch(`${origin}/api/terminal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: commandToRun, timeout: 15000 })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setResult({
+          stdout: data.stdout || "",
+          stderr: data.stderr || "",
+          exitCode: typeof data.exitCode === "number" ? data.exitCode : (data.success ? 0 : 1),
+          durationMs: data.durationMs || (Date.now() - start)
+        });
+        setStatus("done");
+        return;
+      }
+    } catch {}
+
+    // Fallback: browser execution or clean error
+    let stdout = "";
+    let stderr = "";
+    let exitCode = 0;
+    try {
+      const logs: string[] = [];
+      const customConsole = {
+        log: (...args: any[]) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ')),
+        error: (...args: any[]) => logs.push('ERROR: ' + args.join(' ')),
+        warn: (...args: any[]) => logs.push('WARN: ' + args.join(' '))
+      };
+      const fn = new Function("console", commandToRun);
+      fn(customConsole);
+      stdout = logs.join("\n") || "[Executed in client sandbox]";
+    } catch (e: any) {
+      stderr = e.message;
+      exitCode = 1;
+    }
+    setResult({
+      stdout,
+      stderr,
+      exitCode,
+      durationMs: Date.now() - start
+    });
+    setStatus("done");
+  };
+
+  useEffect(() => {
+    if (cmd) {
+      executeCommand(cmd);
+    }
+  }, [cmd]);
+
+  const handleReRun = async () => {
+    if (!cmd || isReRunning) return;
+    setIsReRunning(true);
+    await executeCommand(cmd);
+    setIsReRunning(false);
+  };
+
+  const handleCopy = async () => {
+    if (!result) return;
+    try {
+      await navigator.clipboard.writeText(`$ ${cmd}\n\n${result.stdout || result.stderr || ''}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  const isSuccess = result ? result.exitCode === 0 : true;
+
   return (
-    <div className="rounded-2xl overflow-hidden bg-[#06080e] border border-sky-500/30 my-3 shadow-lg text-xs font-mono">
-      <div className="flex items-center justify-between px-3.5 py-2 bg-[#090d16] border-b border-sky-500/20">
-        <div className="flex items-center gap-2">
-          <Terminal size={12} className="text-sky-400" />
-          <span className="text-sky-300 font-semibold text-[11px]">AI Terminal Execution</span>
+    <div className="rounded-2xl overflow-hidden bg-[#06080e] border border-emerald-500/25 my-3.5 shadow-xl shadow-black/50 transition-all text-xs font-mono">
+      <div className="flex items-center justify-between px-3.5 py-2 bg-[#090d16] border-b border-emerald-500/20">
+        <div className="flex items-center gap-2.5">
+          <div className="flex gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500/60 border border-red-500/80 inline-block" />
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500/60 border border-amber-500/80 inline-block" />
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/60 border border-emerald-500/80 inline-block" />
+          </div>
+          <div className="flex items-center gap-1.5 text-emerald-400 font-semibold tracking-wide text-[11px]">
+            <Terminal size={12} className="shrink-0" />
+            <span>AI Autonomous Terminal</span>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5 text-sky-400 text-[10px] animate-pulse">
-          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
-          <span>Executing command...</span>
+
+        <div className="flex items-center gap-2">
+          {status === "running" || isReRunning ? (
+            <span className="text-[10px] px-2 py-0.5 rounded-md font-mono font-medium flex items-center gap-1 bg-sky-500/20 text-sky-300 border border-sky-500/30 animate-pulse">
+              <RotateCw size={10} className="animate-spin" />
+              <span>Executing...</span>
+            </span>
+          ) : result ? (
+            <span className={`text-[10px] px-2 py-0.5 rounded-md font-mono font-medium flex items-center gap-1 ${
+              isSuccess
+                ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                : "bg-rose-500/15 text-rose-300 border border-rose-500/30"
+            }`}>
+              {isSuccess ? <Check size={10} /> : null}
+              <span>Exit {result.exitCode} ({result.durationMs}ms)</span>
+            </span>
+          ) : null}
+
+          <button
+            onClick={handleReRun}
+            disabled={status === "running" || isReRunning}
+            className="p-1 rounded-md text-[var(--text-muted)] hover:text-white hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-40"
+            title="Re-run this command"
+          >
+            <RotateCw size={12} className={isReRunning ? "animate-spin" : ""} />
+          </button>
+
+          <button
+            onClick={handleCopy}
+            disabled={!result}
+            className="p-1 rounded-md text-[var(--text-muted)] hover:text-white hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-40"
+            title="Copy command & output"
+          >
+            {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+          </button>
         </div>
       </div>
-      <div className="px-3.5 py-2 bg-[#0b101c] flex items-center gap-2">
-        <span className="text-sky-400 font-bold select-none">$</span>
-        <code className="text-white font-semibold">{cmd || "executing..."}</code>
+
+      <div className="px-3.5 py-2.5 bg-[#0b101c] border-b border-white/5 flex items-center gap-2 overflow-x-auto">
+        <span className="text-emerald-400 font-bold select-none text-[12px]">$</span>
+        <code className="text-white font-semibold text-[12px] tracking-wide whitespace-pre">
+          {cmd || "command"}
+        </code>
+      </div>
+
+      <div className="p-3.5 max-h-64 overflow-y-auto bg-[#05070d]">
+        {status === "running" && !result ? (
+          <div className="flex items-center gap-2 text-emerald-400/80 py-1 font-mono text-[11px] animate-pulse">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+            <span>Running in system terminal...</span>
+          </div>
+        ) : result ? (
+          <pre className={`whitespace-pre-wrap break-all leading-relaxed ${isSuccess ? "text-emerald-300/90" : "text-rose-300/90"}`}>
+            {result.stdout || result.stderr || "(Command completed with no output)"}
+          </pre>
+        ) : null}
       </div>
     </div>
   );

@@ -31,7 +31,9 @@ export function FloatingInput({ onSend, onStop, isStreaming }: FloatingInputProp
   const checkTerminalHealth = async () => {
     const start = Date.now();
     try {
-      const res = await fetch('/api/terminal', {
+      const isFile = typeof window !== "undefined" && (window.location.protocol === "file:" || !window.location.origin || window.location.origin === "null");
+      const origin = isFile ? "http://localhost:3000" : "";
+      const res = await fetch(`${origin}/api/terminal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: 'node -v' })
@@ -77,7 +79,9 @@ export function FloatingInput({ onSend, onStop, isStreaming }: FloatingInputProp
     setTestOutput(null);
     const start = Date.now();
     try {
-      const res = await fetch('/api/terminal', {
+      const isFile = typeof window !== "undefined" && (window.location.protocol === "file:" || !window.location.origin || window.location.origin === "null");
+      const origin = isFile ? "http://localhost:3000" : "";
+      const res = await fetch(`${origin}/api/terminal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: 'node -e "console.log(\'Terminal online • Node \' + process.version + \' • \' + process.platform)"' })
