@@ -1,8 +1,6 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import os from "os";
-import { exec } from "child_process";
 import { GoogleGenAI } from "@google/genai";
 
 let geminiClient: GoogleGenAI | null = null;
@@ -188,114 +186,6 @@ async function searchGoogleWeb(rawQuery: string, maxResults = 5): Promise<Search
   } catch (err) {}
 
   return [];
-}
-
-// AI Autonomous Terminal Execution Engine
-interface TerminalRunResult {
-  success: boolean;
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-  durationMs: number;
-  command: string;
-}
-
-async function runTerminalCommand(command: string, timeout = 15000, cwd?: string): Promise<TerminalRunResult> {
-  const startTime = Date.now();
-  const cmd = (command || "").trim();
-  if (!cmd) {
-    return {
-      success: false,
-      stdout: "",
-      stderr: "Empty command",
-      exitCode: 1,
-      durationMs: 0,
-      command: ""
-    };
-  }
-
-  return new Promise((resolve) => {
-    try {
-      exec(
-        cmd,
-        {
-          timeout: Math.min(timeout, 30000),
-          maxBuffer: 1024 * 1024 * 4,
-          cwd: cwd || process.cwd(),
-          env: { ...process.env, FORCE_COLOR: "0" }
-        },
-        (error, stdout, stderr) => {
-          const durationMs = Date.now() - startTime;
-          const exitCode = error ? (typeof (error as any).code === "number" ? (error as any).code : 1) : 0;
-          resolve({
-            success: !error,
-            stdout: (stdout || "").slice(0, 8000),
-            stderr: (stderr || (error && !stdout ? error.message : "")).slice(0, 4000),
-            exitCode,
-            durationMs,
-            command: cmd
-          });
-        }
-      );
-    } catch (err: any) {
-      resolve({
-        success: false,
-        stdout: "",
-        stderr: err?.message || "Execution failed",
-        exitCode: 1,
-        durationMs: Date.now() - startTime,
-        command: cmd
-      });
-    }
-  });
-}
-
-// AI Autonomous Website Fetcher & Reader Engine
-async function fetchSiteCleanText(targetUrl: string): Promise<{ title: string; description: string; content: string }> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    const response = await fetch(targetUrl, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9"
-      }
-    });
-    clearTimeout(timeout);
-    if (!response.ok) {
-      return { title: targetUrl, description: "", content: `Error fetching site: HTTP ${response.status}` };
-    }
-    const html = await response.text();
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    const title = titleMatch ? titleMatch[1].trim() : targetUrl;
-    const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i) ||
-                      html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
-    const description = descMatch ? descMatch[1].trim() : "";
-    let cleanText = html
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-      .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, "")
-      .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, "")
-      .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, "")
-      .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/\s+/g, " ")
-      .trim();
-
-    if (cleanText.length > 8000) {
-      cleanText = cleanText.slice(0, 8000) + "... [content truncated]";
-    }
-    return { title, description, content: cleanText };
-  } catch (err: any) {
-    return { title: targetUrl, description: "", content: `Error fetching site: ${err?.message || "Unknown error"}` };
-  }
 }
 
 // 5 Dedicated Swarm/Swamp Roles definition
@@ -959,25 +849,7 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
         userPromptContent = prompt;
       }
 
-      const terminalAndWebCapabilityDirective = `\n\n[AUTONOMOUS TERMINAL POWER — RUN COMMANDS DIRECTLY ON HOST]
-You are equipped with direct real-time terminal and shell execution power on the host operating system, exactly like an autonomous AI coding assistant.
-When asked to check system info, run commands, test code, or inspect files, execute the command directly using:
-<terminal>command to run</terminal>
-Or inside a shell code block:
-\`\`\`bash
-command to run
-\`\`\`
-The host terminal will immediately execute the command, capture real stdout and stderr, and display the live output to the user.
-CRITICAL RULES:
-- ALWAYS answer directly and concisely without robotic filler.
-- NEVER invent, simulate, or output fake <terminal_result> tags yourself. Only emit the command you wish to execute.
-- Keep commands clean and direct.
-
-[LIVE REAL-TIME WEB SEARCH & SITE INSPECTION TOOLS]
-• Search the web: <web_search>search query</web_search>
-• Read webpage text: <fetch_site>https://example.com</fetch_site>`;
-
-      specializedSystemPrompt += temporalDirective + searchGroundingDirective + terminalAndWebCapabilityDirective;
+      specializedSystemPrompt += temporalDirective + searchGroundingDirective;
 
       // Helper to write chunk
       const writeChunk = (content: string) => {
@@ -1173,8 +1045,8 @@ CRITICAL RULES:
         }
       }
 
-      // Max passes for Vibe Coding self-healing and Autonomous Tool Calling (Terminal, Search, Site Fetch)
-      const maxPasses = isVibeMode ? 4 : 3;
+      // Max passes for Vibe Coding self-healing and continuation (up to 4 passes for complete code generation)
+      const maxPasses = isVibeMode ? 4 : 1;
 
       for (let pass = 0; pass < maxPasses; pass++) {
         if (abortController.signal.aborted) break;
@@ -1359,86 +1231,6 @@ CRITICAL RULES:
 
         // If no pass succeeded, break out
         if (!passCompleted) break;
-
-        // Autonomous Agent Tool Execution: <terminal>, <web_search>, <fetch_site>
-        let hasExecutedTool = false;
-
-        // 1. Terminal Command Execution Tool
-        const terminalMatches = [...currentPassChunk.matchAll(/<terminal>([\s\S]*?)<\/terminal>/gi)];
-        if (terminalMatches.length > 0 && pass < maxPasses - 1) {
-          hasExecutedTool = true;
-          for (const match of terminalMatches) {
-            const rawCmd = match[1].trim();
-            if (!rawCmd) continue;
-            console.log(`[Autonomous AI Terminal] Model ${candidate} executing: ${rawCmd}`);
-            const termRes = await runTerminalCommand(rawCmd, 15000);
-            const resultTag = `\n<terminal_result command="${encodeURIComponent(rawCmd)}" exit_code="${termRes.exitCode}" duration_ms="${termRes.durationMs}">\n${termRes.stdout || termRes.stderr || "(Command completed with no output)"}\n</terminal_result>\n`;
-            writeChunk(resultTag);
-            accumulatedContent += resultTag;
-
-            conversationMessages.push({
-              role: "assistant",
-              content: accumulatedContent
-            });
-            conversationMessages.push({
-              role: "user",
-              content: `[TERMINAL EXECUTION RESULT for: \`${rawCmd}\`]\nExit Code: ${termRes.exitCode} (${termRes.durationMs}ms)\nOutput:\n${termRes.stdout || termRes.stderr || "(no output)"}\n\nRead this real terminal output above, verify it, and provide your direct verified answer to the user.`
-            });
-          }
-        }
-
-        // 2. Web Search Tool
-        const searchMatches = [...currentPassChunk.matchAll(/<web_search>([\s\S]*?)<\/web_search>/gi)];
-        if (searchMatches.length > 0 && pass < maxPasses - 1) {
-          hasExecutedTool = true;
-          for (const match of searchMatches) {
-            const query = match[1].trim();
-            if (!query) continue;
-            console.log(`[Autonomous AI Web Search] Model ${candidate} searching: ${query}`);
-            const searchResults = await searchGoogleWeb(query, 5);
-            const formatted = searchResults.map((r, i) => `${i + 1}. [${r.title}](${r.link})\n${r.snippet}`).join("\n\n") || "No search results found.";
-            const resultTag = `\n<web_search_result query="${encodeURIComponent(query)}">\n${formatted}\n</web_search_result>\n`;
-            writeChunk(resultTag);
-            accumulatedContent += resultTag;
-
-            conversationMessages.push({
-              role: "assistant",
-              content: accumulatedContent
-            });
-            conversationMessages.push({
-              role: "user",
-              content: `[LIVE SEARCH RESULTS for: "${query}"]:\n${formatted}\n\nNow provide your direct answer citing the sources found.`
-            });
-          }
-        }
-
-        // 3. Site Fetch Tool
-        const fetchMatches = [...currentPassChunk.matchAll(/<fetch_site>([\s\S]*?)<\/fetch_site>/gi)];
-        if (fetchMatches.length > 0 && pass < maxPasses - 1) {
-          hasExecutedTool = true;
-          for (const match of fetchMatches) {
-            const url = match[1].trim();
-            if (!url) continue;
-            console.log(`[Autonomous AI Site Fetch] Model ${candidate} reading site: ${url}`);
-            const siteData = await fetchSiteCleanText(url);
-            const resultTag = `\n<fetch_site_result url="${encodeURIComponent(url)}" title="${encodeURIComponent(siteData.title)}">\n${siteData.content.slice(0, 4000)}\n</fetch_site_result>\n`;
-            writeChunk(resultTag);
-            accumulatedContent += resultTag;
-
-            conversationMessages.push({
-              role: "assistant",
-              content: accumulatedContent
-            });
-            conversationMessages.push({
-              role: "user",
-              content: `[WEBPAGE CONTENT for: ${url} (Title: ${siteData.title})]:\n${siteData.content.slice(0, 4000)}\n\nNow answer the user using the webpage content above.`
-            });
-          }
-        }
-
-        if (hasExecutedTool) {
-          continue;
-        }
 
         // Comprehensive Truncation / Interruption Detection
         const trimmedAcc = accumulatedContent.trim();
@@ -1784,164 +1576,6 @@ CRITICAL RULES:
       return res.status(500).json({ error: e.message });
     }
     res.status(400).json({ error: "Invalid memories array" });
-  });
-
-  // AI & User Terminal Execution Engine: runs real commands & scripts with safety timeout
-  app.post("/api/terminal", async (req, res) => {
-    const { command, language, code, cwd, timeout = 12000 } = req.body;
-    const startTime = Date.now();
-    let cmdToRun = (command || "").trim();
-
-    if (!cmdToRun && code) {
-      const lang = (language || "").toLowerCase();
-      if (lang === "javascript" || lang === "js" || lang === "node" || lang === "typescript" || lang === "ts") {
-        const tmpFile = path.join(os.tmpdir(), `hems_run_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.mjs`);
-        try {
-          fs.writeFileSync(tmpFile, code, "utf8");
-          cmdToRun = `node "${tmpFile}"`;
-        } catch (e: any) {
-          return res.json({ success: false, stdout: "", stderr: e.message, exitCode: 1, durationMs: Date.now() - startTime });
-        }
-      } else if (lang === "python" || lang === "py") {
-        const tmpFile = path.join(os.tmpdir(), `hems_run_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.py`);
-        try {
-          fs.writeFileSync(tmpFile, code, "utf8");
-          const pythonCmd = process.platform === "win32" ? "python" : "python3";
-          cmdToRun = `${pythonCmd} "${tmpFile}"`;
-        } catch (e: any) {
-          return res.json({ success: false, stdout: "", stderr: e.message, exitCode: 1, durationMs: Date.now() - startTime });
-        }
-      } else if (lang === "sh" || lang === "bash" || lang === "shell") {
-        cmdToRun = code;
-      } else {
-        cmdToRun = code;
-      }
-    }
-
-    if (!cmdToRun) {
-      return res.status(400).json({ error: "Missing command or code to execute" });
-    }
-
-    try {
-      exec(
-        cmdToRun,
-        {
-          timeout: Math.min(timeout, 30000),
-          maxBuffer: 1024 * 1024 * 4,
-          cwd: cwd || process.cwd(),
-          env: { ...process.env, FORCE_COLOR: "0" }
-        },
-        (error, stdout, stderr) => {
-          const durationMs = Date.now() - startTime;
-          const exitCode = error ? (typeof (error as any).code === "number" ? (error as any).code : 1) : 0;
-          res.json({
-            success: !error,
-            stdout: stdout || "",
-            stderr: stderr || (error && !stdout ? error.message : ""),
-            exitCode,
-            durationMs,
-            command: cmdToRun
-          });
-        }
-      );
-    } catch (err: any) {
-      res.status(500).json({
-        success: false,
-        stdout: "",
-        stderr: err?.message || "Execution failed",
-        exitCode: 1,
-        durationMs: Date.now() - startTime
-      });
-    }
-  });
-
-  // Dedicated Web Search API Endpoint
-  app.all("/api/search", async (req, res) => {
-    try {
-      const rawQuery = String(req.query.q || req.body?.q || req.body?.query || "").trim();
-      if (!rawQuery) {
-        return res.status(400).json({ error: "Query parameter 'q' is required" });
-      }
-      const maxResults = parseInt(String(req.query.max || req.body?.max || 5), 10) || 5;
-      const results = await searchGoogleWeb(rawQuery, maxResults);
-      res.json({ query: rawQuery, results, count: results.length });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || "Search failed", results: [] });
-    }
-  });
-
-  // Website Content Fetcher & Reader Engine (Clean text & structure for AI & reader view)
-  app.all("/api/fetch-site", async (req, res) => {
-    const targetUrl = String(req.query.url || req.body?.url || "").trim();
-    if (!targetUrl || !targetUrl.startsWith("http")) {
-      return res.status(400).json({ error: "Valid HTTP/HTTPS URL required" });
-    }
-    try {
-      const siteData = await fetchSiteCleanText(targetUrl);
-      res.json({
-        success: true,
-        url: targetUrl,
-        title: siteData.title,
-        description: siteData.description,
-        content: siteData.content,
-        length: siteData.content.length
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || "Failed to fetch website" });
-    }
-  });
-
-  // Website Proxy Engine (Strips X-Frame-Options & CSP to render any site in iframe without errors)
-  app.get("/api/proxy-site", async (req, res) => {
-    const targetUrl = String(req.query.url || "").trim();
-    if (!targetUrl || !targetUrl.startsWith("http")) {
-      return res.status(400).send("Valid HTTP/HTTPS URL required");
-    }
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 9000);
-      const response = await fetch(targetUrl, {
-        signal: controller.signal,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        }
-      });
-      clearTimeout(timeout);
-      if (!response.ok) {
-        return res.status(response.status).send(`Failed to proxy website (${response.status})`);
-      }
-
-      const contentType = response.headers.get("content-type") || "text/html";
-      if (!contentType.includes("html")) {
-        res.setHeader("Content-Type", contentType);
-        const buffer = Buffer.from(await response.arrayBuffer());
-        return res.send(buffer);
-      }
-
-      let html = await response.text();
-      const parsedUrl = new URL(targetUrl);
-      const baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
-
-      if (html.includes("<head>")) {
-        html = html.replace("<head>", `<head><base href="${baseUrl}/">`);
-      } else if (html.includes("<head ")) {
-        html = html.replace(/<head[^>]*>/, `$&<base href="${baseUrl}/">`);
-      } else {
-        html = `<base href="${baseUrl}/">\n` + html;
-      }
-
-      html = html.replace(/if\s*\(\s*top\s*!==\s*self\s*\)/gi, "if(false)");
-      html = html.replace(/if\s*\(\s*window\.top\s*!==\s*window\.self\s*\)/gi, "if(false)");
-
-      res.removeHeader("X-Frame-Options");
-      res.removeHeader("Content-Security-Policy");
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.setHeader("X-Frame-Options", "ALLOWALL");
-      res.send(html);
-    } catch (err: any) {
-      res.status(500).send(`Proxy failed: ${err?.message || "Unknown error"}`);
-    }
   });
 
   if (!isServerless) {

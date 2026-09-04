@@ -9,7 +9,6 @@ export interface ClientStreamParams {
   isSwamp?: boolean;
   isVibe?: boolean;
   isPerformance?: boolean;
-  webSearch?: boolean;
   memories?: string[];
   skills?: any[];
   history?: any[];
@@ -108,23 +107,6 @@ MANDATE: Whenever asked for time/date, use this live clock data.`;
     ? `\n\n[USER MEMORIES & PREFERENCES]\n` + memories.map((m, i) => `${i + 1}. ${m}`).join("\n")
     : "";
 
-  let searchGroundingDirective = "";
-  if (params.webSearch) {
-    const isFile = typeof window !== "undefined" && (window.location.protocol === "file:" || !window.location.origin || window.location.origin === "null");
-    const origin = isFile ? "http://localhost:3000" : "";
-    try {
-      const sres = await fetch(`${origin}/api/search?q=${encodeURIComponent(prompt)}`);
-      if (sres.ok) {
-        const sdata = await sres.json();
-        if (Array.isArray(sdata.results) && sdata.results.length > 0) {
-          searchGroundingDirective = `\n\n[LIVE GOOGLE & REAL-TIME WEB SEARCH GROUNDING]\nThe user requested live web access. The following verified real-time sources were retrieved via Google/Web search for "${prompt}":\n\n` +
-            sdata.results.map((r: any, idx: number) => `[Source ${idx + 1}] ${r.title}\nURL: ${r.link}\nSummary: ${r.snippet}`).join("\n\n") +
-            `\n\nDIRECTIVE: You have active Google and real-time Web access. Ground your response in the verified live data above. Quote current facts, verify claims, and cite the relevant source URLs using markdown links [Source Name](URL).\n`;
-        }
-      }
-    } catch {}
-  }
-
   const modelPromises = models.map(async (modelConfig, index) => {
     const modelId = modelConfig.id;
     const modelName = modelConfig.name || modelId;
@@ -150,33 +132,14 @@ MANDATE: Whenever asked for time/date, use this live clock data.`;
       ? `\n\n[ACTIVE SPECIALIZED SKILLS]\n` + relevantSkills.map(s => `• [${s.name || "Skill"}]: ${s.systemPrompt || s.description || ""}`).join("\n")
       : "";
 
-    const terminalAndWebCapabilityDirective = `\n\n[AUTONOMOUS TERMINAL POWER — RUN COMMANDS DIRECTLY ON HOST]
-You are equipped with direct real-time terminal and shell execution power on the host operating system, exactly like an autonomous AI coding assistant.
-When asked to check system info, run commands, test code, or inspect files, execute the command directly using:
-<terminal>command to run</terminal>
-Or inside a shell code block:
-\`\`\`bash
-command to run
-\`\`\`
-The host terminal will immediately execute the command, capture real stdout and stderr, and display the live output to the user.
-CRITICAL RULES:
-- ALWAYS answer directly and concisely without robotic filler.
-- NEVER invent, simulate, or output fake <terminal_result> tags yourself. Only emit the command you wish to execute.
-- Keep commands clean and direct.
-
-[LIVE REAL-TIME WEB SEARCH & SITE INSPECTION TOOLS]
-• Search the web: <web_search>search query</web_search>
-• Read webpage text: <fetch_site>https://example.com</fetch_site>`;
-
     let systemPrompt = "";
     let userPrompt = prompt;
 
     if (isSwamp || (isVibe && models.length > 1)) {
-      systemPrompt = swarmRole.instruction(prompt, modelName) + (isVibe ? `\n\n${VIBE_CODING_PROMPT}` : "") + memoryDirective + skillsDirective + temporalDirective + searchGroundingDirective + terminalAndWebCapabilityDirective;
-      userPrompt = prompt;
+      systemPrompt = swarmRole.instruction(prompt, modelName) + (isVibe ? `\n\n${VIBE_CODING_PROMPT}` : "") + memoryDirective + skillsDirective + temporalDirective;
+      userPrompt = `TASK SPECIFICATION: ${prompt}\nExecute role (${swarmRole.roleName}) with complete code.`;
     } else {
-      systemPrompt = `You are ${modelName}, an elite AI assistant.${isVibe ? "\n\n" + VIBE_CODING_PROMPT : ""}${memoryDirective}${skillsDirective}${temporalDirective}${searchGroundingDirective}${terminalAndWebCapabilityDirective}`;
-      userPrompt = prompt;
+      systemPrompt = `You are ${modelName}, an elite AI assistant.${isVibe ? "\n\n" + VIBE_CODING_PROMPT : ""}${memoryDirective}${skillsDirective}${temporalDirective}`;
     }
 
     const keyToUse = apiKeys[targetSlotIndex % apiKeys.length] || apiKeys[0];
@@ -294,169 +257,74 @@ CRITICAL RULES:
       }
     }
 
-    const maxPasses = isVibe ? 4 : 3;
     let success = false;
     let lastErr = "";
 
-    for (let pass = 0; pass < maxPasses; pass++) {
+    for (const candidate of candidateModels) {
       if (success || signal?.aborted) break;
-      let passStreamedAny = false;
-      let passAccumulated = "";
 
-      for (const candidate of candidateModels) {
-        if (passStreamedAny || signal?.aborted) break;
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            model: candidate,
+            messages,
+            stream: true,
+            temperature: 0.7,
+            max_tokens: 8192
+          }),
+          signal
+        });
 
-        try {
-          const res = await fetch(endpoint, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              model: candidate,
-              messages,
-              stream: true,
-              temperature: 0.7,
-              max_tokens: 8192
-            }),
-            signal
-          });
+        if (!res.ok || !res.body) {
+          const t = await res.text().catch(() => "");
+          lastErr = `HTTP ${res.status}: ${t.slice(0, 120)}`;
+          continue;
+        }
 
-          if (!res.ok || !res.body) {
-            const t = await res.text().catch(() => "");
-            lastErr = `HTTP ${res.status}: ${t.slice(0, 120)}`;
-            continue;
-          }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let accumulated = "";
 
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() || "";
-
-            for (const line of lines) {
-              const tr = line.trim();
-              if (!tr) continue;
-              if (tr === "data: [DONE]" || tr === "[DONE]") break;
-              if (tr.startsWith("data: ")) {
-                try {
-                  const parsed = JSON.parse(tr.slice(6));
-                  const chunk = parsed.choices?.[0]?.delta?.content || "";
-                  if (chunk) {
-                    passAccumulated += chunk;
-                    passStreamedAny = true;
-                    onChunk(targetSlotIndex, modelId, chunk);
-                    if (detectRepetition(passAccumulated)) {
-                      break;
-                    }
+          for (const line of lines) {
+            const tr = line.trim();
+            if (!tr) continue;
+            if (tr === "data: [DONE]" || tr === "[DONE]") break;
+            if (tr.startsWith("data: ")) {
+              try {
+                const parsed = JSON.parse(tr.slice(6));
+                const chunk = parsed.choices?.[0]?.delta?.content || "";
+                if (chunk) {
+                  accumulated += chunk;
+                  onChunk(targetSlotIndex, modelId, chunk);
+                  if (detectRepetition(accumulated)) {
+                    break;
                   }
-                } catch {}
-              }
+                }
+              } catch {}
             }
           }
-        } catch (err: any) {
-          if (err.name === "AbortError") return;
-          lastErr = err.message || "Connection error";
         }
-      }
 
-      if (!passStreamedAny) break;
-
-      // Check for Autonomous AI Tool Invocations (<terminal>, <web_search>, <fetch_site>)
-      let hasExecutedTool = false;
-
-      // 1. Terminal Command Execution
-      const terminalMatches = [...passAccumulated.matchAll(/<terminal>([\s\S]*?)<\/terminal>/gi)];
-      if (terminalMatches.length > 0 && pass < maxPasses - 1) {
-        hasExecutedTool = true;
-        for (const match of terminalMatches) {
-          const rawCmd = match[1].trim();
-          if (!rawCmd) continue;
-          let termRes: any = null;
-          const start = Date.now();
-          const isFile = typeof window !== "undefined" && (window.location.protocol === "file:" || !window.location.origin || window.location.origin === "null");
-          const origin = isFile ? "http://localhost:3000" : "";
-          try {
-            const tr = await fetch(`${origin}/api/terminal`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ command: rawCmd, timeout: 15000 })
-            });
-            if (tr.ok) {
-              termRes = await tr.json();
-            }
-          } catch {}
-
-          if (!termRes) {
-            let stdout = "";
-            let stderr = "";
-            let exitCode = 0;
-            try {
-              const logs: string[] = [];
-              const customConsole = {
-                log: (...args: any[]) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ')),
-                error: (...args: any[]) => logs.push('ERROR: ' + args.join(' ')),
-                warn: (...args: any[]) => logs.push('WARN: ' + args.join(' '))
-              };
-              const fn = new Function("console", rawCmd);
-              fn(customConsole);
-              stdout = logs.join("\n") || "[Executed in browser sandbox]";
-            } catch (e: any) {
-              stderr = e.message;
-              exitCode = 1;
-            }
-            termRes = { stdout, stderr, exitCode, durationMs: Date.now() - start };
-          }
-
-          const resultTag = `\n<terminal_result command="${encodeURIComponent(rawCmd)}" exit_code="${termRes.exitCode}" duration_ms="${termRes.durationMs}">\n${termRes.stdout || termRes.stderr || "(Command completed with no output)"}\n</terminal_result>\n`;
-          onChunk(targetSlotIndex, modelId, resultTag);
-          messages.push({ role: "assistant", content: passAccumulated + resultTag });
-          messages.push({
-            role: "user",
-            content: `[TERMINAL EXECUTION RESULT for: \`${rawCmd}\`]\nExit Code: ${termRes.exitCode} (${termRes.durationMs}ms)\nOutput:\n${termRes.stdout || termRes.stderr || "(no output)"}\n\nRead this real terminal output above, verify it, and provide your direct verified answer to the user.`
-          });
+        if (accumulated.length > 0) {
+          success = true;
+          onDone(targetSlotIndex, modelId);
+          break;
         }
+      } catch (err: any) {
+        if (err.name === "AbortError") return;
+        lastErr = err.message || "Connection error";
       }
-
-      // 2. Web Search Tool
-      const searchMatches = [...passAccumulated.matchAll(/<web_search>([\s\S]*?)<\/web_search>/gi)];
-      if (searchMatches.length > 0 && pass < maxPasses - 1) {
-        hasExecutedTool = true;
-        for (const match of searchMatches) {
-          const query = match[1].trim();
-          if (!query) continue;
-          let resultsText = "";
-          try {
-            const sr = await fetch(`${origin}/api/search?q=${encodeURIComponent(query)}`);
-            if (sr.ok) {
-              const sdata = await sr.json();
-              if (Array.isArray(sdata.results) && sdata.results.length > 0) {
-                resultsText = sdata.results.map((r: any, i: number) => `${i + 1}. [${r.title}](${r.link})\n${r.snippet}`).join("\n\n");
-              }
-            }
-          } catch {}
-          if (!resultsText) resultsText = "Search completed. Live resources accessible.";
-          const resultTag = `\n<web_search_result query="${encodeURIComponent(query)}">\n${resultsText}\n</web_search_result>\n`;
-          onChunk(targetSlotIndex, modelId, resultTag);
-          messages.push({ role: "assistant", content: passAccumulated + resultTag });
-          messages.push({
-            role: "user",
-            content: `[LIVE SEARCH RESULTS for: "${query}"]:\n${resultsText}\n\nNow provide your direct answer citing the sources found.`
-          });
-        }
-      }
-
-      if (hasExecutedTool) {
-        continue;
-      }
-
-      success = true;
-      onDone(targetSlotIndex, modelId);
-      break;
     }
 
     if (!success && !signal?.aborted) {
