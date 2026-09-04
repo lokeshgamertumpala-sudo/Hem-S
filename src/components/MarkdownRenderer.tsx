@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Check, Copy, Play, Terminal, ExternalLink, RotateCw } from 'lucide-react';
+import { Check, Copy, Play, Terminal, ExternalLink, RotateCw, Globe, Compass } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
 interface MarkdownRendererProps {
@@ -18,21 +18,52 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }
     let text = content || "";
     if (!text) return "";
 
-    // 1. Normalize duplicate adjoining code fence seams from multi-pass continuations
+    // 1. Transform completed terminal results into custom code fences:
+    text = text.replace(
+      /<terminal_result\s+command=["']([^"']*)["']\s+exit_code=["']([^"']*)["'](?:\s+duration_ms=["']([^"']*)["'])?>([\s\S]*?)<\/terminal_result>/gi,
+      (_m, cmd, exitCode, dur, output) => {
+        return `\n\`\`\`ai-terminal-result\n__CMD__:${cmd}\n__EXIT__:${exitCode}\n__DUR__:${dur || "0"}\n${output.trim()}\n\`\`\`\n`;
+      }
+    );
+
+    // 2. Transform in-flight/standalone <terminal> commands into custom code fences:
+    text = text.replace(
+      /<terminal>([\s\S]*?)<\/terminal>/gi,
+      (_m, cmd) => {
+        return `\n\`\`\`ai-terminal-exec\n__CMD__:${encodeURIComponent(cmd.trim())}\n\`\`\`\n`;
+      }
+    );
+
+    // 3. Transform web search results:
+    text = text.replace(
+      /<web_search_result\s+query=["']([^"']*)["']>([\s\S]*?)<\/web_search_result>/gi,
+      (_m, query, results) => {
+        return `\n\`\`\`ai-web-search-result\n__QUERY__:${query}\n${results.trim()}\n\`\`\`\n`;
+      }
+    );
+
+    // 4. Transform site fetch results:
+    text = text.replace(
+      /<fetch_site_result\s+url=["']([^"']*)["'](?:\s+title=["']([^"']*)["'])?>([\s\S]*?)<\/fetch_site_result>/gi,
+      (_m, url, title, body) => {
+        return `\n\`\`\`ai-fetch-site-result\n__URL__:${url}\n__TITLE__:${title || ""}\n${body.trim()}\n\`\`\`\n`;
+      }
+    );
+
+    // 5. Normalize duplicate adjoining code fence seams from multi-pass continuations
     text = text.replace(/```\s*\n\s*```[a-zA-Z0-9_-]*\s*\n/g, '\n');
 
-    // 2. Fix broken markdown image syntax where models insert newlines or spaces:
-    // e.g. ![Alt]\n(url) or ![Alt] (url) -> ![Alt](url)
+    // 6. Fix broken markdown image syntax where models insert newlines or spaces:
     text = text.replace(/!\[([^\]]*)\]\s*[\r\n]+\s*\(([^\s\)]+)\)/g, '![$1]($2)');
     text = text.replace(/!\[([^\]]*)\]\s+\(([^\s\)]+)\)/g, '![$1]($2)');
 
-    // 3. Fix escaped backslashes in image URLs: e.g. \%20 or \( or \)
+    // 7. Fix escaped backslashes in image URLs: e.g. \%20 or \( or \)
     text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
       const cleanUrl = url.trim().replace(/\\(%20|%|\(|\))/g, '$1').replace(/\s+/g, '%20');
       return `![${alt}](${cleanUrl})`;
     });
 
-    // 4. Automatically route pollinations URLs through local resilient /api/image queue to prevent concurrent 429s
+    // 8. Automatically route pollinations URLs through local resilient /api/image queue to prevent concurrent 429s
     text = text.replace(/!\[([^\]]*)\]\((https?:\/\/image\.pollinations\.ai\/prompt\/([^?)]+)(\?[^)]*)?)\)/g, (match, alt, fullUrl, rawPrompt, query) => {
       return `![${alt}](/api/image?prompt=${rawPrompt}${query ? query.replace('?', '&') : ''})`;
     });
@@ -50,9 +81,22 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }
         remarkPlugins={[remarkGfm]}
         components={{
           code({ node, inline, className, children, ...props }: any) {
-            const match = /language-(\w+)/.exec(className || '');
+            const match = /language-([a-zA-Z0-9_\-]+)/.exec(className || '');
             const language = match ? match[1] : 'text';
             const codeString = String(children).replace(/\n$/, '');
+
+            if (language === 'ai-terminal-result') {
+              return <AiTerminalResultCard rawContent={codeString} />;
+            }
+            if (language === 'ai-terminal-exec') {
+              return <AiTerminalExecCard rawContent={codeString} />;
+            }
+            if (language === 'ai-web-search-result') {
+              return <AiWebSearchCard rawContent={codeString} />;
+            }
+            if (language === 'ai-fetch-site-result') {
+              return <AiFetchSiteCard rawContent={codeString} />;
+            }
             
             const isBlock = match || String(children).includes('\n');
 
@@ -444,6 +488,302 @@ const CodeBlock = React.memo(function CodeBlock({ code, language }: { code: stri
           )}
         </div>
       )}
+    </div>
+  );
+});
+
+const AiTerminalResultCard = React.memo(function AiTerminalResultCard({ rawContent }: { rawContent: string }) {
+  const [copied, setCopied] = useState(false);
+  const [isReRunning, setIsReRunning] = useState(false);
+  const [currentResult, setCurrentResult] = useState<{
+    cmd: string;
+    exitCode: number;
+    durationMs: number;
+    output: string;
+  } | null>(null);
+
+  useEffect(() => {
+    let cmd = "";
+    let exitCode = 0;
+    let durationMs = 0;
+    const lines = rawContent.split("\n");
+    const outputLines: string[] = [];
+    for (const line of lines) {
+      if (line.startsWith("__CMD__:")) {
+        try {
+          cmd = decodeURIComponent(line.slice(8).trim());
+        } catch {
+          cmd = line.slice(8).trim();
+        }
+      } else if (line.startsWith("__EXIT__:")) {
+        exitCode = parseInt(line.slice(9).trim(), 10) || 0;
+      } else if (line.startsWith("__DUR__:")) {
+        durationMs = parseInt(line.slice(8).trim(), 10) || 0;
+      } else {
+        outputLines.push(line);
+      }
+    }
+    setCurrentResult({
+      cmd: cmd || "command",
+      exitCode,
+      durationMs,
+      output: outputLines.join("\n").trim()
+    });
+  }, [rawContent]);
+
+  const handleReRun = async () => {
+    if (!currentResult?.cmd || isReRunning) return;
+    setIsReRunning(true);
+    const start = Date.now();
+    try {
+      const res = await fetch("/api/terminal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: currentResult.cmd })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentResult({
+          cmd: currentResult.cmd,
+          exitCode: data.exitCode || 0,
+          durationMs: data.durationMs || (Date.now() - start),
+          output: (data.stdout || data.stderr || "(No output)").trim()
+        });
+      }
+    } catch (e: any) {
+      setCurrentResult(prev => prev ? { ...prev, exitCode: 1, output: `Re-run error: ${e.message}` } : null);
+    } finally {
+      setIsReRunning(false);
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!currentResult) return;
+    try {
+      await navigator.clipboard.writeText(`$ ${currentResult.cmd}\n\n${currentResult.output}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  if (!currentResult) return null;
+  const isSuccess = currentResult.exitCode === 0;
+
+  return (
+    <div className="rounded-2xl overflow-hidden bg-[#06080e] border border-emerald-500/25 my-3.5 shadow-xl shadow-black/50 transition-all text-xs font-mono">
+      <div className="flex items-center justify-between px-3.5 py-2 bg-[#090d16] border-b border-emerald-500/20">
+        <div className="flex items-center gap-2.5">
+          <div className="flex gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500/60 border border-red-500/80 inline-block" />
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500/60 border border-amber-500/80 inline-block" />
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/60 border border-emerald-500/80 inline-block" />
+          </div>
+          <div className="flex items-center gap-1.5 text-emerald-400 font-semibold tracking-wide text-[11px]">
+            <Terminal size={12} className="shrink-0" />
+            <span>AI Autonomous Terminal</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] px-2 py-0.5 rounded-md font-mono font-medium flex items-center gap-1 ${
+            isReRunning
+              ? "bg-sky-500/20 text-sky-300 border border-sky-500/30 animate-pulse"
+              : isSuccess
+              ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+              : "bg-rose-500/15 text-rose-300 border border-rose-500/30"
+          }`}>
+            {isReRunning ? (
+              <>
+                <RotateCw size={10} className="animate-spin" />
+                <span>Running...</span>
+              </>
+            ) : isSuccess ? (
+              <>
+                <Check size={10} />
+                <span>Exit 0 ({currentResult.durationMs}ms)</span>
+              </>
+            ) : (
+              <span>Exit {currentResult.exitCode} ({currentResult.durationMs}ms)</span>
+            )}
+          </span>
+
+          <button
+            onClick={handleReRun}
+            disabled={isReRunning}
+            className="p-1 rounded-md text-[var(--text-muted)] hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            title="Re-run this command"
+          >
+            <RotateCw size={12} className={isReRunning ? "animate-spin" : ""} />
+          </button>
+
+          <button
+            onClick={handleCopy}
+            className="p-1 rounded-md text-[var(--text-muted)] hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            title="Copy command & output"
+          >
+            {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+          </button>
+        </div>
+      </div>
+
+      <div className="px-3.5 py-2.5 bg-[#0b101c] border-b border-white/5 flex items-center gap-2 overflow-x-auto">
+        <span className="text-emerald-400 font-bold select-none text-[12px]">$</span>
+        <code className="text-white font-semibold text-[12px] tracking-wide whitespace-pre">
+          {currentResult.cmd}
+        </code>
+      </div>
+
+      <div className="p-3.5 max-h-64 overflow-y-auto bg-[#05070d]">
+        <pre className={`whitespace-pre-wrap break-all leading-relaxed ${isSuccess ? "text-emerald-300/90" : "text-rose-300/90"}`}>
+          {currentResult.output || "(Command completed with no output)"}
+        </pre>
+      </div>
+    </div>
+  );
+});
+
+const AiTerminalExecCard = React.memo(function AiTerminalExecCard({ rawContent }: { rawContent: string }) {
+  let cmd = "";
+  const lines = rawContent.split("\n");
+  for (const line of lines) {
+    if (line.startsWith("__CMD__:")) {
+      try {
+        cmd = decodeURIComponent(line.slice(8).trim());
+      } catch {
+        cmd = line.slice(8).trim();
+      }
+    }
+  }
+
+  return (
+    <div className="rounded-2xl overflow-hidden bg-[#06080e] border border-sky-500/30 my-3 shadow-lg text-xs font-mono">
+      <div className="flex items-center justify-between px-3.5 py-2 bg-[#090d16] border-b border-sky-500/20">
+        <div className="flex items-center gap-2">
+          <Terminal size={12} className="text-sky-400" />
+          <span className="text-sky-300 font-semibold text-[11px]">AI Terminal Execution</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-sky-400 text-[10px] animate-pulse">
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
+          <span>Executing command...</span>
+        </div>
+      </div>
+      <div className="px-3.5 py-2 bg-[#0b101c] flex items-center gap-2">
+        <span className="text-sky-400 font-bold select-none">$</span>
+        <code className="text-white font-semibold">{cmd || "executing..."}</code>
+      </div>
+    </div>
+  );
+});
+
+const AiWebSearchCard = React.memo(function AiWebSearchCard({ rawContent }: { rawContent: string }) {
+  let query = "";
+  const lines = rawContent.split("\n");
+  const resultLines: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith("__QUERY__:")) {
+      try {
+        query = decodeURIComponent(line.slice(10).trim());
+      } catch {
+        query = line.slice(10).trim();
+      }
+    } else {
+      resultLines.push(line);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl overflow-hidden bg-[#060e18] border border-cyan-500/30 my-3 shadow-lg text-xs">
+      <div className="flex items-center justify-between px-3.5 py-2 bg-[#091422] border-b border-cyan-500/20">
+        <div className="flex items-center gap-2">
+          <Globe size={13} className="text-cyan-400" />
+          <span className="text-cyan-300 font-semibold text-[11px]">AI Real-Time Web Grounding</span>
+        </div>
+        <span className="text-[10px] text-cyan-400/80 font-mono">
+          {query ? `"${query}"` : "Live Search"}
+        </span>
+      </div>
+      <div className="p-3 bg-[#050a12] text-[12px] text-cyan-100/90 space-y-2">
+        <ReactMarkdown
+          components={{
+            a: ({ href, children }) => {
+              const handleClick = (e: React.MouseEvent) => {
+                if (href && href.startsWith("http")) {
+                  e.preventDefault();
+                  window.dispatchEvent(new CustomEvent("open-site-preview", { detail: { url: href } }));
+                }
+              };
+              return (
+                <a
+                  href={href}
+                  onClick={handleClick}
+                  className="text-cyan-400 hover:underline font-medium inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <span>{children}</span>
+                  <ExternalLink size={10} />
+                </a>
+              );
+            }
+          }}
+        >
+          {resultLines.join("\n")}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+});
+
+const AiFetchSiteCard = React.memo(function AiFetchSiteCard({ rawContent }: { rawContent: string }) {
+  let url = "";
+  let title = "";
+  const lines = rawContent.split("\n");
+  const contentLines: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith("__URL__:")) {
+      try {
+        url = decodeURIComponent(line.slice(8).trim());
+      } catch {
+        url = line.slice(8).trim();
+      }
+    } else if (line.startsWith("__TITLE__:")) {
+      try {
+        title = decodeURIComponent(line.slice(10).trim());
+      } catch {
+        title = line.slice(10).trim();
+      }
+    } else {
+      contentLines.push(line);
+    }
+  }
+
+  const handleOpen = () => {
+    if (url) {
+      window.dispatchEvent(new CustomEvent("open-site-preview", { detail: { url } }));
+    }
+  };
+
+  return (
+    <div className="rounded-2xl overflow-hidden bg-[#0c0818] border border-purple-500/30 my-3 shadow-lg text-xs">
+      <div className="flex items-center justify-between px-3.5 py-2 bg-[#120c24] border-b border-purple-500/20">
+        <div className="flex items-center gap-2 truncate">
+          <Compass size={13} className="text-purple-400 shrink-0" />
+          <span className="text-purple-300 font-semibold text-[11px] truncate">
+            {title || "AI Inspected Webpage"}
+          </span>
+        </div>
+        {url && (
+          <button
+            onClick={handleOpen}
+            className="px-2 py-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 text-[10px] font-medium transition-colors cursor-pointer shrink-0 ml-2"
+          >
+            Preview Site ↗
+          </button>
+        )}
+      </div>
+      <div className="p-3 bg-[#080512] text-[12px] text-purple-100/85 max-h-48 overflow-y-auto leading-relaxed">
+        <pre className="whitespace-pre-wrap font-sans">
+          {contentLines.join("\n")}
+        </pre>
+      </div>
     </div>
   );
 });
