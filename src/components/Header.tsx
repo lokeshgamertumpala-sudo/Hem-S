@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { Menu, ChevronDown, Activity, Droplets, Sparkles, Zap, Terminal } from 'lucide-react';
+import { Menu, ChevronDown, Activity, Droplets, Sparkles, Zap } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useModels } from '../context/ModelContext';
 import { useSkills } from '../context/SkillContext';
@@ -8,10 +8,9 @@ interface HeaderProps {
   onToggleSidebar: () => void;
   onOpenModels: () => void;
   onOpenSkills?: () => void;
-  onOpenTerminal?: () => void;
 }
 
-export function Header({ onToggleSidebar, onOpenModels, onOpenSkills, onOpenTerminal }: HeaderProps) {
+export function Header({ onToggleSidebar, onOpenModels, onOpenSkills }: HeaderProps) {
   const { selectedModels, applyThemeModels } = useModels();
   const { activeSkills } = useSkills();
   const activeModelsCount = selectedModels.length;
@@ -116,17 +115,6 @@ export function Header({ onToggleSidebar, onOpenModels, onOpenSkills, onOpenTerm
           <span className="font-semibold -tracking-tight">
             Skills{activeSkills.length > 0 ? ` (${activeSkills.length})` : ''}
           </span>
-        </motion.button>
-
-        {/* AI Terminal Button */}
-        <motion.button
-          whileTap={{ scale: 0.94 }}
-          onClick={onOpenTerminal}
-          title="Open Antigravity AI Terminal (Ctrl+`)"
-          className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full backdrop-blur-3xl border cursor-pointer transition-all duration-300 whitespace-nowrap shrink-0 text-[11px] sm:text-xs select-none apple-liquid-glass hover:bg-emerald-500/15 hover:border-emerald-500/40 text-[var(--text-muted)] hover:text-emerald-300"
-        >
-          <Terminal size={12} className="shrink-0 text-emerald-400" />
-          <span className="font-semibold -tracking-tight">Terminal</span>
         </motion.button>
 
         {/* Model Selector Button */}

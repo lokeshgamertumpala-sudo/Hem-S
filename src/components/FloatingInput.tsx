@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { Paperclip, ArrowUp, Square, X, Image as ImageIcon, Globe, Terminal } from 'lucide-react';
+import { Paperclip, ArrowUp, Square, X, Image as ImageIcon, Globe } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useSkills } from '../context/SkillContext';
@@ -79,19 +79,18 @@ export function FloatingInput({ onSend, onStop, isStreaming }: FloatingInputProp
   const getIndicatorText = () => {
     const webPrefix = isWebSearch ? '🌐 GOOGLE SEARCH ACTIVE • ' : '';
     const skillSuffix = activeSkills.length > 0 ? ` • ${activeSkills.length} SKILL${activeSkills.length > 1 ? 'S' : ''} ACTIVE` : '';
-    const termSuffix = ' • ⚡ TERMINAL ONLINE';
     if (isStreaming) {
-      if (isPerformance) return `${webPrefix}⚡ AUTO-PERFORMANCE MODE ACTIVE • 5-AI QUANTUM ROSTER STREAMING${skillSuffix}${termSuffix}`;
-      if (isVibe && isSwamp) return `${webPrefix}SWARM CODE STREAM ACTIVE • 5-AI FULL SYNTHESIS${skillSuffix}${termSuffix}`;
-      if (isVibe) return `${webPrefix}CODE STREAM ACTIVE • VIBE SYNTHESIS${skillSuffix}${termSuffix}`;
-      if (isSwamp) return `${webPrefix}SWARM STREAM ACTIVE • 5-AI PARALLEL REASONING${skillSuffix}${termSuffix}`;
-      return `${webPrefix}PARALLEL STREAM ACTIVE • REASONING IN PROGRESS${skillSuffix}${termSuffix}`;
+      if (isPerformance) return `${webPrefix}⚡ AUTO-PERFORMANCE MODE ACTIVE • 5-AI QUANTUM ROSTER STREAMING${skillSuffix}`;
+      if (isVibe && isSwamp) return `${webPrefix}SWARM CODE STREAM ACTIVE • 5-AI FULL SYNTHESIS${skillSuffix}`;
+      if (isVibe) return `${webPrefix}CODE STREAM ACTIVE • VIBE SYNTHESIS${skillSuffix}`;
+      if (isSwamp) return `${webPrefix}SWARM STREAM ACTIVE • 5-AI PARALLEL REASONING${skillSuffix}`;
+      return `${webPrefix}PARALLEL STREAM ACTIVE • REASONING IN PROGRESS${skillSuffix}`;
     }
-    if (isPerformance) return `${webPrefix}⚡ AUTO-PERFORMANCE ACTIVE • 5-AI QUANTUM ROSTER ENGAGED${skillSuffix}${termSuffix}`;
-    if (isVibe && isSwamp) return `${webPrefix}SWARM & CODE MODE ACTIVE • 5-AI ROLE SYNTHESIS${skillSuffix}${termSuffix}`;
-    if (isVibe) return `${webPrefix}CODE MODE ACTIVE • VIBE SYNTHESIS${skillSuffix}${termSuffix}`;
-    if (isSwamp) return `${webPrefix}SWARM MODE ACTIVE (5-AI PARALLEL ROSTER)${skillSuffix}${termSuffix}`;
-    return `${webPrefix}PARALLEL AI ENGINE ACTIVE${skillSuffix}${termSuffix}`;
+    if (isPerformance) return `${webPrefix}⚡ AUTO-PERFORMANCE ACTIVE • 5-AI QUANTUM ROSTER ENGAGED${skillSuffix}`;
+    if (isVibe && isSwamp) return `${webPrefix}SWARM & CODE MODE ACTIVE • 5-AI ROLE SYNTHESIS${skillSuffix}`;
+    if (isVibe) return `${webPrefix}CODE MODE ACTIVE • VIBE SYNTHESIS${skillSuffix}`;
+    if (isSwamp) return `${webPrefix}SWARM MODE ACTIVE (5-AI PARALLEL ROSTER)${skillSuffix}`;
+    return `${webPrefix}PARALLEL AI ENGINE ACTIVE${skillSuffix}`;
   };
 
   return (
@@ -163,17 +162,6 @@ export function FloatingInput({ onSend, onStop, isStreaming }: FloatingInputProp
           }`}
         >
           <Globe size={18} className={isWebSearch ? "animate-spin-slow" : ""} />
-        </motion.button>
-
-        {/* AI Terminal Toggle */}
-        <motion.button 
-          whileTap={{ scale: 0.9 }}
-          onClick={() => window.dispatchEvent(new CustomEvent('open-terminal'))}
-          type="button"
-          title="Open Antigravity AI Terminal (Ctrl+`)"
-          className="w-9 h-9 sm:w-11 sm:h-11 shrink-0 rounded-full flex items-center justify-center text-[var(--text-muted)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors cursor-pointer"
-        >
-          <Terminal size={18} />
         </motion.button>
         
         <textarea

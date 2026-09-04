@@ -12,7 +12,6 @@ import { SkillProvider } from './context/SkillContext';
 import { ModelSelectionModal } from './components/ModelSelectionModal';
 import { SkillsModal } from './components/SkillsModal';
 import { SitePreviewModal } from './components/SitePreviewModal';
-import { AiTerminalModal } from './components/AiTerminalModal';
 import { InkDropTransition } from './components/InkDropTransition';
 
 function AppContent() {
@@ -20,7 +19,6 @@ function AppContent() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
-  const [terminalOpen, setTerminalOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,24 +27,11 @@ function AppContent() {
         setPreviewUrl(e.detail.url);
       }
     };
-    const handleOpenTerminal = () => setTerminalOpen(true);
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+` or Cmd+` toggles terminal
-      if ((e.ctrlKey || e.metaKey) && (e.key === '`' || e.key === '~')) {
-        e.preventDefault();
-        setTerminalOpen(prev => !prev);
-      }
-    };
 
     window.addEventListener('open-site-preview', handleOpenPreview);
-    window.addEventListener('open-terminal', handleOpenTerminal);
-    window.addEventListener('keydown', handleKeyDown);
 
     return () => {
       window.removeEventListener('open-site-preview', handleOpenPreview);
-      window.removeEventListener('open-terminal', handleOpenTerminal);
-      window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
@@ -58,7 +43,6 @@ function AppContent() {
           onToggleSidebar={() => setSidebarOpen(true)} 
           onOpenModels={() => setModelsOpen(true)}
           onOpenSkills={() => setSkillsOpen(true)}
-          onOpenTerminal={() => setTerminalOpen(true)}
         />
         
         <Sidebar 
@@ -71,10 +55,6 @@ function AppContent() {
           onOpenSkills={() => {
             setSidebarOpen(false);
             setSkillsOpen(true);
-          }}
-          onOpenTerminal={() => {
-            setSidebarOpen(false);
-            setTerminalOpen(true);
           }}
         />
         
@@ -91,10 +71,6 @@ function AppContent() {
           onAskAi={(prompt) => {
             window.dispatchEvent(new CustomEvent('send-swarm-prompt', { detail: { prompt } }));
           }}
-        />
-        <AiTerminalModal 
-          isOpen={terminalOpen} 
-          onClose={() => setTerminalOpen(false)} 
         />
         
         <main className="flex-1 flex flex-col w-full h-full relative overflow-hidden">

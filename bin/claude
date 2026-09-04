@@ -1,3 +1,0 @@
-#!/bin/sh
-basedir=$(dirname "$0")
-exec node "$basedir/claude.cjs" "$@"

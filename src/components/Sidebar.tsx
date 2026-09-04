@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Clock, Settings, Download, Plus, Trash2, Zap, Terminal } from 'lucide-react';
+import { X, Clock, Settings, Download, Plus, Trash2, Zap } from 'lucide-react';
 import { useChats } from '../context/ChatContext';
 import { useSkills } from '../context/SkillContext';
 
@@ -8,10 +8,9 @@ interface SidebarProps {
   onClose: () => void;
   onOpenSettings: () => void;
   onOpenSkills?: () => void;
-  onOpenTerminal?: () => void;
 }
 
-export function Sidebar({ isOpen, onClose, onOpenSettings, onOpenSkills, onOpenTerminal }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, onOpenSettings, onOpenSkills }: SidebarProps) {
   const { chats, activeChatId, createNewChat, loadChat, deleteChat, clearAllChats } = useChats();
   const { activeSkills } = useSkills();
 
@@ -139,22 +138,6 @@ export function Sidebar({ isOpen, onClose, onOpenSettings, onOpenSkills, onOpenT
                     {activeSkills.length} Active
                   </span>
                 )}
-              </motion.button>
-              <motion.button 
-                onClick={() => {
-                  onClose();
-                  onOpenTerminal?.();
-                }} 
-                whileTap={{ scale: 0.98 }} 
-                className="w-full px-4 py-3 rounded-xl hover:bg-white/5 text-[var(--text-primary)] flex items-center justify-between transition-colors text-sm font-medium -tracking-tight cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <Terminal size={18} className="text-emerald-400" />
-                  <span>AI Terminal & Shell</span>
-                </div>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  LIVE
-                </span>
               </motion.button>
               <motion.button 
                 onClick={onOpenSettings} 
