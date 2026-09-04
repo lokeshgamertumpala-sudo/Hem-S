@@ -762,6 +762,8 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
     const isFileInspectionQuery = /\b(list\s*(all\s*)?files|show\s*files|files\s*in\s*|directory\s*tree|dir\b|ls\b)\b/i.test(prompt) && !prompt.includes("http");
     const isMathQuery = /^(?:calculate|calc|compute|what\s+is|eval)\s+([0-9\.\s\+\-\*\/\^\(\)\%\*\*]+)$/i.test(prompt) || /^([0-9\.\s\+\-\*\/\^\(\)\%\*\*]{3,})$/.test(prompt.trim());
     const isExplicitCommand = /^\s*(\$|powershell|bash|sh|cmd)\s+(.+)/i.test(prompt) || /^\s*(git|npm|node|npx|python|dir|ls|cat|curl|pwd|echo)\s+/i.test(prompt);
+    const isClaudeCodeQuery = /claude(\s*code)?/i.test(prompt);
+    const isGeneralRunQuery = /^(?:run|execute|in\s+terminal\s+run)\s+(.+)/i.test(prompt);
 
     let terminalCmdToRun = "";
     let terminalReason = "";
@@ -770,6 +772,15 @@ MANDATE: Whenever asked about the current time, current date, day of the week, o
       const match = prompt.match(/^\s*(?:\$|powershell|bash|sh|cmd)?\s*(.+)/i);
       terminalCmdToRun = match ? match[1].trim() : prompt.trim();
       terminalReason = "Direct terminal command requested by user";
+    } else if (isClaudeCodeQuery) {
+      terminalCmdToRun = process.platform === "win32"
+        ? "where.exe claude; npm list -g @anthropic-ai/claude-code --depth=0"
+        : "which claude; npm list -g @anthropic-ai/claude-code --depth=0";
+      terminalReason = "Check if Claude Code CLI is installed on host machine";
+    } else if (isGeneralRunQuery) {
+      const match = prompt.match(/^(?:run|execute|in\s+terminal\s+run)\s+(.+)/i);
+      terminalCmdToRun = match ? match[1].trim() : prompt.trim();
+      terminalReason = "Execute user requested command on host terminal";
     } else if (isGitQuery) {
       terminalCmdToRun = "git status --short --branch && git log -3 --oneline";
       terminalReason = "Inspect live Git repository branch status and recent commits";
@@ -957,7 +968,16 @@ ${execResult.stdout.trim().slice(0, 800)}
         userPromptContent = prompt;
       }
 
-      specializedSystemPrompt += temporalDirective + searchGroundingDirective + terminalGroundingDirective;
+      const terminalCapabilityDirective = `\n\n[ANTIGRAVITY TERMINAL & HOST EXECUTION CAPABILITY MANDATE]
+You are operating within Hem-S Antigravity AI System, which IS equipped with a live host terminal execution engine and code runner.
+CRITICAL MANDATE:
+1. NEVER claim "I don't have access to your local machine", "I cannot run terminal commands", "I am only a text-based AI", or refuse to execute or check tasks.
+2. If the user asks about running, testing, or installing tools (such as Claude Code, Git, Node, Python, or shell scripts):
+   - Explicitly acknowledge that the system CAN run host commands directly via the Antigravity Terminal.
+   - If the tool is not installed, provide the exact commands to install and run it (e.g., \`npm install -g @anthropic-ai/claude-code\` or \`npx @anthropic-ai/claude-code\`) and state that the user can execute it right in the Terminal.
+3. If host execution output is provided in your context, ground your answer 100% in that real data.`;
+
+      specializedSystemPrompt += temporalDirective + searchGroundingDirective + terminalCapabilityDirective + terminalGroundingDirective;
       if (terminalGroundingDirective) {
         userPromptContent = `${prompt}\n\n${terminalGroundingDirective}`;
       }
