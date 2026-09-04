@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { Paperclip, ArrowUp, Square, X, Image as ImageIcon, Globe } from 'lucide-react';
+import { Paperclip, ArrowUp, Square, X, Image as ImageIcon, Globe, Terminal, RotateCw, CheckCircle2, Sparkles } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useSkills } from '../context/SkillContext';
@@ -15,11 +15,89 @@ export function FloatingInput({ onSend, onStop, isStreaming }: FloatingInputProp
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [attachedFileName, setAttachedFileName] = useState<string | null>(null);
   const [isWebSearch, setIsWebSearch] = useState(false);
+  const [terminalStatus, setTerminalStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [terminalLatency, setTerminalLatency] = useState<number | null>(null);
+  const [terminalSystem, setTerminalSystem] = useState<string>('');
+  const [showTerminalPopup, setShowTerminalPopup] = useState(false);
+  const [isTestingTerminal, setIsTestingTerminal] = useState(false);
+  const [testOutput, setTestOutput] = useState<string | null>(null);
+  const terminalPopupRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { mode, isVibe, isPerformance } = useTheme();
   const { activeSkills } = useSkills();
   const isSwamp = mode === 'swamp';
+
+  const checkTerminalHealth = async () => {
+    const start = Date.now();
+    try {
+      const res = await fetch('/api/terminal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: 'node -v' })
+      });
+      const dur = Date.now() - start;
+      if (res.ok) {
+        const data = await res.json();
+        if (data.exitCode === 0) {
+          setTerminalStatus('online');
+          setTerminalLatency(dur);
+          setTerminalSystem(`Node.js ${data.stdout?.trim() || ''}`);
+          return;
+        }
+      }
+      setTerminalStatus('offline');
+      setTerminalLatency(dur);
+    } catch {
+      setTerminalStatus('offline');
+      setTerminalLatency(null);
+    }
+  };
+
+  useEffect(() => {
+    checkTerminalHealth();
+    const interval = setInterval(checkTerminalHealth, 35000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (terminalPopupRef.current && !terminalPopupRef.current.contains(e.target as Node)) {
+        setShowTerminalPopup(false);
+      }
+    };
+    if (showTerminalPopup) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showTerminalPopup]);
+
+  const runTerminalQuickTest = async () => {
+    setIsTestingTerminal(true);
+    setTestOutput(null);
+    const start = Date.now();
+    try {
+      const res = await fetch('/api/terminal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: 'node -e "console.log(\'Terminal online • Node \' + process.version + \' • \' + process.platform)"' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTerminalStatus('online');
+        setTerminalLatency(data.durationMs || (Date.now() - start));
+        setTestOutput(data.stdout?.trim() || 'Terminal is 100% active and working!');
+      } else {
+        setTerminalStatus('offline');
+        setTestOutput(`Server status ${res.status}`);
+      }
+    } catch (err: any) {
+      setTerminalStatus('offline');
+      setTestOutput(`Error: ${err.message || 'Offline'}`);
+    } finally {
+      setIsTestingTerminal(false);
+    }
+  };
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -89,18 +167,19 @@ export function FloatingInput({ onSend, onStop, isStreaming }: FloatingInputProp
   const getIndicatorText = () => {
     const webPrefix = isWebSearch ? '🌐 GOOGLE SEARCH ACTIVE • ' : '';
     const skillSuffix = activeSkills.length > 0 ? ` • ${activeSkills.length} SKILL${activeSkills.length > 1 ? 'S' : ''} ACTIVE` : '';
+    const termSuffix = terminalStatus === 'online' ? ' • ⚡ TERMINAL ONLINE' : terminalStatus === 'checking' ? ' • TERMINAL CHECKING' : ' • ⚠️ TERMINAL SANDBOX';
     if (isStreaming) {
-      if (isPerformance) return `${webPrefix}⚡ AUTO-PERFORMANCE MODE ACTIVE • 5-AI QUANTUM ROSTER STREAMING${skillSuffix}`;
-      if (isVibe && isSwamp) return `${webPrefix}SWARM CODE STREAM ACTIVE • 5-AI FULL SYNTHESIS${skillSuffix}`;
-      if (isVibe) return `${webPrefix}CODE STREAM ACTIVE • VIBE SYNTHESIS${skillSuffix}`;
-      if (isSwamp) return `${webPrefix}SWARM STREAM ACTIVE • 5-AI PARALLEL REASONING${skillSuffix}`;
-      return `${webPrefix}PARALLEL STREAM ACTIVE • REASONING IN PROGRESS${skillSuffix}`;
+      if (isPerformance) return `${webPrefix}⚡ AUTO-PERFORMANCE MODE ACTIVE • 5-AI QUANTUM ROSTER STREAMING${skillSuffix}${termSuffix}`;
+      if (isVibe && isSwamp) return `${webPrefix}SWARM CODE STREAM ACTIVE • 5-AI FULL SYNTHESIS${skillSuffix}${termSuffix}`;
+      if (isVibe) return `${webPrefix}CODE STREAM ACTIVE • VIBE SYNTHESIS${skillSuffix}${termSuffix}`;
+      if (isSwamp) return `${webPrefix}SWARM STREAM ACTIVE • 5-AI PARALLEL REASONING${skillSuffix}${termSuffix}`;
+      return `${webPrefix}PARALLEL STREAM ACTIVE • REASONING IN PROGRESS${skillSuffix}${termSuffix}`;
     }
-    if (isPerformance) return `${webPrefix}⚡ AUTO-PERFORMANCE ACTIVE • 5-AI QUANTUM ROSTER ENGAGED${skillSuffix}`;
-    if (isVibe && isSwamp) return `${webPrefix}SWARM & CODE MODE ACTIVE • 5-AI ROLE SYNTHESIS${skillSuffix}`;
-    if (isVibe) return `${webPrefix}CODE MODE ACTIVE • VIBE SYNTHESIS${skillSuffix}`;
-    if (isSwamp) return `${webPrefix}SWARM MODE ACTIVE (5-AI PARALLEL ROSTER)${skillSuffix}`;
-    return `${webPrefix}PARALLEL AI ENGINE ACTIVE${skillSuffix}`;
+    if (isPerformance) return `${webPrefix}⚡ AUTO-PERFORMANCE ACTIVE • 5-AI QUANTUM ROSTER ENGAGED${skillSuffix}${termSuffix}`;
+    if (isVibe && isSwamp) return `${webPrefix}SWARM & CODE MODE ACTIVE • 5-AI ROLE SYNTHESIS${skillSuffix}${termSuffix}`;
+    if (isVibe) return `${webPrefix}CODE MODE ACTIVE • VIBE SYNTHESIS${skillSuffix}${termSuffix}`;
+    if (isSwamp) return `${webPrefix}SWARM MODE ACTIVE (5-AI PARALLEL ROSTER)${skillSuffix}${termSuffix}`;
+    return `${webPrefix}PARALLEL AI ENGINE ACTIVE${skillSuffix}${termSuffix}`;
   };
 
   return (
@@ -173,6 +252,146 @@ export function FloatingInput({ onSend, onStop, isStreaming }: FloatingInputProp
         >
           <Globe size={18} className={isWebSearch ? "animate-spin-slow" : ""} />
         </motion.button>
+
+        {/* Live Terminal Power Status Toggle & Tiny Popup Trigger */}
+        <div className="relative shrink-0" ref={terminalPopupRef}>
+          <motion.button 
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setShowTerminalPopup(!showTerminalPopup)}
+            type="button"
+            title={`Terminal Engine: ${terminalStatus.toUpperCase()} (Click to check)`}
+            className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all cursor-pointer relative ${
+              showTerminalPopup
+                ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/50 shadow-[0_0_15px_rgba(52,211,153,0.35)]'
+                : terminalStatus === 'online'
+                ? 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10'
+                : terminalStatus === 'checking'
+                ? 'text-amber-400 hover:bg-amber-500/10'
+                : 'text-rose-400/80 hover:text-rose-300 hover:bg-rose-500/10'
+            }`}
+          >
+            <Terminal size={18} />
+            {/* Live status dot */}
+            <span className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full border border-black/60 ${
+              terminalStatus === 'online'
+                ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                : terminalStatus === 'checking'
+                ? 'bg-amber-400 animate-ping'
+                : 'bg-rose-500 shadow-[0_0_6px_#f43f5e]'
+            }`} />
+          </motion.button>
+
+          {/* Tiny Terminal Health Status Popup */}
+          <AnimatePresence>
+            {showTerminalPopup && (
+              <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                transition={{ duration: 0.15 }}
+                className="absolute bottom-full mb-3 left-0 sm:-left-6 w-72 sm:w-80 rounded-2xl backdrop-blur-2xl bg-[#090d16]/95 border border-emerald-500/35 shadow-[0_15px_40px_rgba(0,0,0,0.7)] p-3.5 text-xs font-mono z-50 pointer-events-auto"
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between pb-2 border-b border-white/10 mb-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-red-500/70 inline-block" />
+                      <span className="w-2 h-2 rounded-full bg-amber-500/70 inline-block" />
+                      <span className="w-2 h-2 rounded-full bg-emerald-500/70 inline-block" />
+                    </div>
+                    <span className="text-[11px] font-semibold text-white tracking-wide flex items-center gap-1">
+                      <Terminal size={12} className="text-emerald-400" />
+                      AI Terminal Engine
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowTerminalPopup(false)}
+                    className="text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer p-0.5"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+
+                {/* Status Row */}
+                <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-2 mb-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[var(--text-muted)] text-[10px] uppercase">Engine Status</span>
+                    <span className={`text-[10.5px] font-semibold flex items-center gap-1.5 ${
+                      terminalStatus === 'online'
+                        ? 'text-emerald-400'
+                        : terminalStatus === 'checking'
+                        ? 'text-amber-400'
+                        : 'text-rose-400'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full ${
+                        terminalStatus === 'online'
+                          ? 'bg-emerald-400 animate-pulse'
+                          : terminalStatus === 'checking'
+                          ? 'bg-amber-400 animate-spin'
+                          : 'bg-rose-500'
+                      }`} />
+                      {terminalStatus === 'online'
+                        ? 'ONLINE (Ready to Execute)'
+                        : terminalStatus === 'checking'
+                        ? 'Pinging Terminal...'
+                        : 'OFFLINE (Client Sandbox)'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-white/80">
+                    <span className="text-[var(--text-muted)] text-[10px] uppercase">Latency</span>
+                    <span>{terminalLatency !== null ? `${terminalLatency}ms` : '--'}</span>
+                  </div>
+
+                  {terminalSystem && (
+                    <div className="flex items-center justify-between text-[11px] text-white/80">
+                      <span className="text-[var(--text-muted)] text-[10px] uppercase">Runtime</span>
+                      <span className="truncate max-w-[170px] text-emerald-300">{terminalSystem}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Live Test Output Display if available */}
+                {testOutput && (
+                  <div className="mb-2.5 p-2 rounded-lg bg-[#05080e] border border-emerald-500/20 text-[11px]">
+                    <div className="text-[10px] text-emerald-400/80 mb-1 flex items-center gap-1">
+                      <CheckCircle2 size={10} /> Test Response:
+                    </div>
+                    <pre className="text-emerald-300 whitespace-pre-wrap break-all leading-tight">
+                      {testOutput}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={runTerminalQuickTest}
+                    disabled={isTestingTerminal}
+                    type="button"
+                    className="flex-1 py-1.5 px-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-medium transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <RotateCw size={11} className={isTestingTerminal ? "animate-spin" : ""} />
+                    <span>{isTestingTerminal ? 'Testing...' : 'Test Terminal'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowTerminalPopup(false);
+                      onSend("Check what version of Node.js and Python are installed on this system using your terminal.", null, false);
+                    }}
+                    type="button"
+                    title="Send terminal test prompt to all AI models"
+                    className="py-1.5 px-2.5 rounded-lg bg-white/10 hover:bg-white/15 text-white/90 border border-white/10 text-[11px] font-medium transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Sparkles size={11} className="text-cyan-400" />
+                    <span>Run in AI</span>
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
         
         <textarea
           ref={textareaRef}
